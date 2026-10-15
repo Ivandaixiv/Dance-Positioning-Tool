@@ -1,0 +1,20 @@
+{
+  "name": "ali-dance-tool",
+  "version": "1.0.0",
+  "description": "Desktop choreography positioning chart tool with YouTube playback sync.",
+  "main": "main.js",
+  "scripts": {
+    "start": "node launcher.js"
+  },
+  "keywords": [
+    "electron",
+    "dance",
+    "choreography",
+    "youtube"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^36.0.0"
+  }
+}

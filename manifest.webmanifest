@@ -1,0 +1,9 @@
+{
+  "name": "Ali Dance Tool",
+  "short_name": "Dance Tool",
+  "description": "Create and view choreography positioning charts synced to video.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#10121B",
+  "theme_color": "#10121B"
+}
