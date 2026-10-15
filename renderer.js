@@ -22,6 +22,26 @@ const colorPalette = [
 
 const spriteColumns = [-194, -262, -332, -402, -472, -527, -596, -657];
 const spriteRows = [-67, -191, -310, -432, -546];
+const spritePoseOptions = [
+  { frame: 0, name: "Walk Left" },
+  { frame: 3, name: "Side Groove" },
+  { frame: 6, name: "Reach Left" },
+  { frame: 7, name: "Walk Right" },
+  { frame: 8, name: "Hands Up Left" },
+  { frame: 10, name: "Hands Overhead" },
+  { frame: 16, name: "Low Sweep" },
+  { frame: 17, name: "Deep Crouch" },
+  { frame: 19, name: "Knee Lift" },
+  { frame: 20, name: "Airplane Balance" },
+  { frame: 22, name: "Right Lean" },
+  { frame: 24, name: "Hands Behind Head" },
+  { frame: 26, name: "Open Arms" },
+  { frame: 30, name: "Elbows Up" },
+  { frame: 31, name: "Reach Right" },
+  { frame: 32, name: "Ready Stance" },
+  { frame: 34, name: "Hands to Heart" },
+  { frame: 38, name: "Open Welcome" }
+];
 
 const elements = {
   projectTitleInput: document.querySelector("#projectTitleInput"),
@@ -80,8 +100,15 @@ function buildDefaultDancers(count) {
     id: index + 1,
     name: `Dancer ${index + 1}`,
     color: colorPalette[index % colorPalette.length],
-    spriteFrame: index % 40
+    spriteFrame: spritePoseOptions[index % spritePoseOptions.length].frame
   }));
+}
+
+function normalizeSpriteFrame(value, dancerIndex) {
+  const frame = Number(value);
+  return spritePoseOptions.some((pose) => pose.frame === frame)
+    ? frame
+    : spritePoseOptions[dancerIndex % spritePoseOptions.length].frame;
 }
 
 function clamp(value, min, max) {
@@ -170,7 +197,7 @@ function normalizeTransitions(transitions, formations, dancerCount) {
     const key = `${fromFormationId}:${toFormationId}`;
     const paths = {};
     for (let dancerId = 1; dancerId <= dancerCount; dancerId += 1) {
-      const rawPath = transition.paths?.[dancerId];
+      const rawPath = transition?.paths?.[dancerId];
       if (!Array.isArray(rawPath)) {
         continue;
       }
@@ -193,7 +220,7 @@ function normalizeProject(data) {
       id: index + 1,
       name: dancer.name || `Dancer ${index + 1}`,
       color: dancer.color || colorPalette[index % colorPalette.length],
-      spriteFrame: clamp(Number(dancer.spriteFrame) || 0, 0, 39)
+      spriteFrame: normalizeSpriteFrame(dancer.spriteFrame, index)
     }))
     : buildDefaultDancers(dancerCount);
 
@@ -352,7 +379,7 @@ window.onYouTubeIframeAPIReady = () => {
 
 function stopPlaybackWatcher() {
   if (playbackTimer) {
-    window.clearInterval(playbackTimer);
+    window.cancelAnimationFrame(playbackTimer);
     playbackTimer = null;
   }
 }
@@ -381,6 +408,12 @@ function seekCurrentMedia(seconds) {
   if (project.mediaType === "file" && htmlVideo) {
     htmlVideo.currentTime = target;
   }
+
+  window.setTimeout(() => {
+    const time = getCurrentMediaTime();
+    syncFormationToTime(time, true);
+    animateFormationToTime(time);
+  }, 150);
 }
 
 function syncFormationToTime(time, silent) {
@@ -393,18 +426,122 @@ function syncFormationToTime(time, silent) {
     }
   }
 
-  if (target && target.id !== project.activeFormationId) {
+  if (target && (target.id !== project.activeFormationId || activeTransitionKey)) {
     setActiveFormation(target.id, { silent });
   }
 }
 
+function getPlaybackSegment(time) {
+  const ordered = [...project.formations].sort((a, b) => a.time - b.time);
+  if (ordered.length === 0) {
+    return null;
+  }
+
+  let fromFormation = ordered[0];
+  let toFormation = ordered[1] || null;
+
+  for (let index = 0; index < ordered.length; index += 1) {
+    if (ordered[index].time <= time + 0.05) {
+      fromFormation = ordered[index];
+      toFormation = ordered[index + 1] || null;
+    }
+  }
+
+  if (!toFormation) {
+    return { fromFormation, toFormation: null, progress: 1 };
+  }
+
+  const duration = Math.max(toFormation.time - fromFormation.time, 0.01);
+  return {
+    fromFormation,
+    toFormation,
+    progress: clamp((time - fromFormation.time) / duration, 0, 1)
+  };
+}
+
+function getPositionAlongPath(points, progress) {
+  if (points.length < 2) {
+    return points[0] || { x: 50, y: 50 };
+  }
+
+  const segments = [];
+  let totalLength = 0;
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const start = points[index];
+    const end = points[index + 1];
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    segments.push({ start, end, length });
+    totalLength += length;
+  }
+
+  if (totalLength === 0) {
+    return { ...points[points.length - 1] };
+  }
+
+  let remaining = clamp(progress, 0, 1) * totalLength;
+  for (const segment of segments) {
+    if (remaining <= segment.length || segment === segments[segments.length - 1]) {
+      const segmentProgress = segment.length === 0 ? 1 : remaining / segment.length;
+      return {
+        x: segment.start.x + (segment.end.x - segment.start.x) * segmentProgress,
+        y: segment.start.y + (segment.end.y - segment.start.y) * segmentProgress
+      };
+    }
+    remaining -= segment.length;
+  }
+
+  return { ...points[points.length - 1] };
+}
+
+function animateFormationToTime(time) {
+  if (activeTransitionKey || activeDrag) {
+    return;
+  }
+
+  const segment = getPlaybackSegment(time);
+  if (!segment?.toFormation) {
+    return;
+  }
+
+  const { fromFormation, toFormation, progress } = segment;
+  const transition = project.transitions[getTransitionKey(fromFormation.id, toFormation.id)];
+
+  project.dancers.forEach((dancer) => {
+    const start = fromFormation.positions.find((position) => position.dancerId === dancer.id);
+    const end = toFormation.positions.find((position) => position.dancerId === dancer.id);
+    const marker = elements.stageSurface.querySelector(`.dancer-marker[data-dancer-id="${dancer.id}"]`);
+    if (!start || !end || !marker) {
+      return;
+    }
+
+    const route = [start, ...(transition?.paths?.[dancer.id] || []), end];
+    const currentPosition = getPositionAlongPath(route, progress);
+    const projected = projectStagePosition(currentPosition);
+    marker.style.left = `${projected.x}%`;
+    marker.style.top = `${projected.y}%`;
+    marker.style.setProperty("--marker-scale", projected.scale);
+    marker.style.zIndex = String(Math.round(currentPosition.y) + 2);
+    marker.title = `${dancer.name} transitioning (${Math.round(progress * 100)}%)`;
+    updateLegendPosition(dancer.id, currentPosition);
+  });
+
+  elements.activeFormationLabel.textContent =
+    `${fromFormation.name} to ${toFormation.name} | ${Math.round(progress * 100)}%`;
+}
+
 function startPlaybackWatcher() {
   stopPlaybackWatcher();
-  playbackTimer = window.setInterval(() => {
+
+  const updatePlayback = () => {
     const time = getCurrentMediaTime();
     elements.currentTimeLabel.textContent = formatTime(time);
     syncFormationToTime(time, true);
-  }, 100);
+    animateFormationToTime(time);
+    playbackTimer = window.requestAnimationFrame(updatePlayback);
+  };
+
+  playbackTimer = window.requestAnimationFrame(updatePlayback);
 }
 
 function handleYouTubeStateChange(event) {
@@ -415,14 +552,20 @@ function handleYouTubeStateChange(event) {
   } else if (event.data === states.PAUSED) {
     elements.videoStatus.textContent = "Paused";
     stopPlaybackWatcher();
-    syncFormationToTime(getCurrentMediaTime(), true);
+    const time = getCurrentMediaTime();
+    syncFormationToTime(time, true);
+    animateFormationToTime(time);
   } else if (event.data === states.BUFFERING) {
     elements.videoStatus.textContent = "Buffering";
   } else if (event.data === states.ENDED) {
     elements.videoStatus.textContent = "Ended";
     stopPlaybackWatcher();
+    const time = getCurrentMediaTime();
+    syncFormationToTime(time, true);
+    animateFormationToTime(time);
   } else if (event.data === states.CUED) {
     elements.videoStatus.textContent = "Cued";
+    animateFormationToTime(getCurrentMediaTime());
   }
 }
 
@@ -503,11 +646,15 @@ function wireHtmlVideoEvents(video) {
   video.addEventListener("pause", () => {
     elements.videoStatus.textContent = "Paused";
     stopPlaybackWatcher();
-    syncFormationToTime(getCurrentMediaTime(), true);
+    const time = getCurrentMediaTime();
+    syncFormationToTime(time, true);
+    animateFormationToTime(time);
   });
   video.addEventListener("ended", () => {
     elements.videoStatus.textContent = "Ended";
     stopPlaybackWatcher();
+    syncFormationToTime(video.duration, true);
+    animateFormationToTime(video.duration);
   });
   video.addEventListener("loadedmetadata", () => {
     elements.videoStatus.textContent = "Ready";
@@ -515,6 +662,8 @@ function wireHtmlVideoEvents(video) {
   });
   video.addEventListener("timeupdate", () => {
     elements.currentTimeLabel.textContent = formatTime(video.currentTime);
+    syncFormationToTime(video.currentTime, true);
+    animateFormationToTime(video.currentTime);
   });
 }
 
@@ -569,7 +718,7 @@ function updateSelectedDancerUi(dancerId) {
 }
 
 function projectStagePosition(position) {
-  if (project.stageView !== "3d") {
+  if (project.stageView !== "3d" || activeTransitionKey) {
     return { x: position.x, y: position.y, scale: 1 };
   }
 
@@ -589,7 +738,7 @@ function unprojectStagePointer(clientX, clientY) {
   const screenX = ((clientX - bounds.left) / bounds.width) * 100;
   const screenY = ((clientY - bounds.top) / bounds.height) * 100;
 
-  if (project.stageView !== "3d") {
+  if (project.stageView !== "3d" || activeTransitionKey) {
     return {
       x: clamp(screenX, 4, 96),
       y: clamp(screenY, 6, 94)
@@ -691,9 +840,8 @@ function renderTransitionStage(transition) {
     return;
   }
 
-  const is3d = project.stageView === "3d";
-  elements.stageSurface.classList.toggle("view-3d", is3d);
-  elements.stageSurface.classList.toggle("view-2d", !is3d);
+  elements.stageSurface.classList.remove("view-3d");
+  elements.stageSurface.classList.add("view-2d");
   elements.stageSurface.classList.add("transition-mode");
   elements.stageSurface.innerHTML = '<div class="stage-caption">Audience</div><div class="upstage-caption">Transition Map</div>';
 
@@ -783,7 +931,7 @@ function renderStage(formation) {
     marker.style.setProperty("--marker-scale", projected.scale);
     marker.style.zIndex = String(Math.round(position.y) + 2);
     if (is3d) {
-      const frameIndex = (dancer.id - 1) % 40;
+      const frameIndex = dancer.spriteFrame;
       const frameColumn = frameIndex % 8;
       const frameRow = Math.floor(frameIndex / 8);
       marker.classList.add("sprite-marker");
@@ -827,10 +975,33 @@ function renderLegend(formation) {
         <div class="legend-subtitle">X ${position.x.toFixed(1)}% | Y ${position.y.toFixed(1)}%</div>
       </div>
     `;
+
+    if (project.stageView === "3d" && project.selectedDancerId === dancer.id) {
+      const poseControl = document.createElement("label");
+      poseControl.className = "pose-control";
+      poseControl.innerHTML = "<span>Sprite pose</span>";
+      const poseSelect = document.createElement("select");
+      poseSelect.setAttribute("aria-label", `Sprite pose for ${dancer.name}`);
+      spritePoseOptions.forEach((pose) => {
+        const option = document.createElement("option");
+        option.value = String(pose.frame);
+        option.textContent = pose.name;
+        option.selected = pose.frame === dancer.spriteFrame;
+        poseSelect.append(option);
+      });
+      poseSelect.addEventListener("click", (event) => event.stopPropagation());
+      poseSelect.addEventListener("change", (event) => {
+        event.stopPropagation();
+        dancer.spriteFrame = Number(event.target.value);
+        saveState();
+        render();
+      });
+      poseControl.append(poseSelect);
+      row.append(poseControl);
+    }
+
     row.addEventListener("click", () => {
-      project.selectedDancerId = dancer.id;
-      saveState();
-      render();
+      selectDancer(dancer.id);
     });
     elements.dancerLegend.append(row);
   });
@@ -839,9 +1010,9 @@ function renderLegend(formation) {
 function renderTimeline(activeFormationId) {
   elements.timelineList.innerHTML = "";
 
-  [...project.formations]
-    .sort((a, b) => a.time - b.time)
-    .forEach((formation) => {
+  const orderedFormations = [...project.formations].sort((a, b) => a.time - b.time);
+
+  orderedFormations.forEach((formation, index) => {
       const card = document.createElement("article");
       card.className = `timeline-card${formation.id === activeFormationId ? " active" : ""}`;
       card.innerHTML = `
@@ -854,23 +1025,65 @@ function renderTimeline(activeFormationId) {
         seekCurrentMedia(formation.time);
       });
       elements.timelineList.append(card);
+
+      const nextFormation = orderedFormations[index + 1];
+      if (!nextFormation) {
+        return;
+      }
+
+      const transition = ensureTransition(formation.id, nextFormation.id);
+      const mappedDancers = Object.values(transition.paths)
+        .filter((path) => Array.isArray(path) && path.length > 0)
+        .length;
+      const transitionCard = document.createElement("button");
+      transitionCard.type = "button";
+      transitionCard.className = `transition-card${activeTransitionKey === getTransitionKey(formation.id, nextFormation.id) ? " active" : ""}`;
+      transitionCard.innerHTML = `
+        <span class="transition-arrow" aria-hidden="true">↓</span>
+        <span>
+          <strong>Map transition</strong>
+          <small>${formation.name} to ${nextFormation.name}</small>
+          <small>${mappedDancers} of ${project.dancerCount} paths customized</small>
+        </span>
+      `;
+      transitionCard.addEventListener("click", () => {
+        openTransitionEditor(formation.id, nextFormation.id);
+      });
+      elements.timelineList.append(transitionCard);
     });
 }
 
 function render() {
   const activeFormation = getActiveFormation();
+  const activeTransition = getActiveTransition();
   elements.projectTitleInput.value = project.title;
   elements.youtubeUrlInput.value = project.youtubeUrl;
   elements.dancerCountInput.value = project.dancerCount;
   elements.formationNameInput.value = activeFormation.name;
   elements.formationTimeInput.value = activeFormation.time.toFixed(1);
   elements.formationNotesInput.value = activeFormation.notes;
-  elements.activeFormationLabel.textContent = activeFormation.name;
+  elements.activeFormationLabel.textContent = activeTransition
+    ? "Transition paths"
+    : activeFormation.name;
   elements.currentTimeLabel.textContent = formatTime(getCurrentMediaTime());
   elements.view2dButton.classList.toggle("active", project.stageView === "2d");
   elements.view3dButton.classList.toggle("active", project.stageView === "3d");
   elements.view2dButton.setAttribute("aria-pressed", String(project.stageView === "2d"));
   elements.view3dButton.setAttribute("aria-pressed", String(project.stageView === "3d"));
+  elements.transitionToolbar.classList.toggle("hidden", !activeTransition);
+  elements.addWaypointButton.classList.toggle("active", isAddingWaypoint);
+  elements.stageSurface.classList.toggle("adding-waypoint", Boolean(activeTransition && isAddingWaypoint));
+  elements.addWaypointButton.textContent = isAddingWaypoint ? "Tap Stage to Place" : "Add Waypoint";
+
+  if (activeTransition) {
+    const fromFormation = project.formations.find((formation) => formation.id === activeTransition.fromFormationId);
+    const toFormation = project.formations.find((formation) => formation.id === activeTransition.toFormationId);
+    const selectedDancer = project.dancers.find((dancer) => dancer.id === project.selectedDancerId);
+    elements.transitionTitle.textContent = `${fromFormation.name} to ${toFormation.name}`;
+    elements.transitionHint.textContent = isAddingWaypoint
+      ? `Tap the stage to place a waypoint for ${selectedDancer.name}.`
+      : `Selected: ${selectedDancer.name}. Add or drag waypoints to shape their route.`;
+  }
   updateMediaSourceLabel();
 
   renderStage(activeFormation);
@@ -934,8 +1147,11 @@ function beginMarkerDrag(event) {
 
 function resizeDancers(newCount) {
   const count = clamp(newCount, 1, 30);
+  const existingDancers = project.dancers;
   project.dancerCount = count;
-  project.dancers = buildDefaultDancers(count);
+  project.dancers = Array.from({ length: count }, (_, index) => (
+    existingDancers[index] || buildDefaultDancers(count)[index]
+  ));
   project.formations = project.formations.map((formation) => ({
     ...formation,
     positions: normalizePositions(formation.positions, count)
@@ -981,7 +1197,17 @@ function deleteFormation() {
   }
 
   const index = project.formations.findIndex((formation) => formation.id === project.activeFormationId);
+  const deletedFormationId = project.activeFormationId;
   project.formations.splice(index, 1);
+  Object.keys(project.transitions).forEach((key) => {
+    const transition = project.transitions[key];
+    if (
+      transition.fromFormationId === deletedFormationId
+      || transition.toFormationId === deletedFormationId
+    ) {
+      delete project.transitions[key];
+    }
+  });
   const fallback = project.formations[Math.max(0, index - 1)];
   setActiveFormation(fallback.id);
   saveState();
@@ -1164,6 +1390,45 @@ elements.formationNotesInput.addEventListener("input", (event) => {
 elements.addFormationButton.addEventListener("click", addFormation);
 elements.view2dButton.addEventListener("click", () => setStageView("2d"));
 elements.view3dButton.addEventListener("click", () => setStageView("3d"));
+elements.addWaypointButton.addEventListener("click", () => {
+  isAddingWaypoint = !isAddingWaypoint;
+  render();
+});
+elements.clearPathButton.addEventListener("click", () => {
+  const transition = getActiveTransition();
+  if (!transition) {
+    return;
+  }
+  delete transition.paths[project.selectedDancerId];
+  isAddingWaypoint = false;
+  saveState();
+  render();
+});
+elements.finishTransitionButton.addEventListener("click", finishTransitionEditor);
+elements.stageSurface.addEventListener("pointerdown", (event) => {
+  const transition = getActiveTransition();
+  if (
+    !transition
+    || !isAddingWaypoint
+    || event.button !== 0
+    || event.target.closest("button")
+  ) {
+    return;
+  }
+
+  const dancerId = project.selectedDancerId;
+  const point = unprojectStagePointer(event.clientX, event.clientY);
+  if (!transition.paths[dancerId]) {
+    transition.paths[dancerId] = [];
+  }
+  transition.paths[dancerId].push({
+    x: Number(point.x.toFixed(2)),
+    y: Number(point.y.toFixed(2))
+  });
+  isAddingWaypoint = false;
+  saveState();
+  render();
+});
 elements.duplicateFormationButton.addEventListener("click", duplicateFormation);
 elements.deleteFormationButton.addEventListener("click", deleteFormation);
 elements.sortTimelineButton.addEventListener("click", sortFormations);
