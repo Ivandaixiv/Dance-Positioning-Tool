@@ -44,6 +44,13 @@ const spritePoseOptions = [
 ];
 
 const elements = {
+  workspace: document.querySelector("#workspace"),
+  playbackPanel: document.querySelector("#playbackPanel"),
+  formationPanel: document.querySelector("#formationPanel"),
+  cuesPanel: document.querySelector("#cuesPanel"),
+  togglePlaybackButton: document.querySelector("#togglePlaybackButton"),
+  toggleFormationButton: document.querySelector("#toggleFormationButton"),
+  toggleCuesButton: document.querySelector("#toggleCuesButton"),
   projectTitleInput: document.querySelector("#projectTitleInput"),
   youtubeUrlInput: document.querySelector("#youtubeUrlInput"),
   loadVideoButton: document.querySelector("#loadVideoButton"),
@@ -161,6 +168,11 @@ function defaultProject() {
     dancers: buildDefaultDancers(12),
     formations: [createFormation("Formation 1", 0, 12)],
     transitions: {},
+    panelState: {
+      playback: false,
+      formation: false,
+      cues: false
+    },
     activeFormationId: 1,
     selectedDancerId: 1
   };
@@ -251,6 +263,11 @@ function normalizeProject(data) {
     dancers,
     formations,
     transitions: normalizeTransitions(data.transitions, formations, dancerCount),
+    panelState: {
+      playback: Boolean(data.panelState?.playback),
+      formation: Boolean(data.panelState?.formation),
+      cues: Boolean(data.panelState?.cues)
+    },
     activeFormationId: formations.some((formation) => formation.id === data.activeFormationId)
       ? data.activeFormationId
       : formations[0].id,
@@ -277,6 +294,41 @@ function loadState() {
 
 function saveState() {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+}
+
+function applyPanelState() {
+  const panels = {
+    playback: {
+      panel: elements.playbackPanel,
+      button: elements.togglePlaybackButton,
+      label: "playback"
+    },
+    formation: {
+      panel: elements.formationPanel,
+      button: elements.toggleFormationButton,
+      label: "formation editor"
+    },
+    cues: {
+      panel: elements.cuesPanel,
+      button: elements.toggleCuesButton,
+      label: "cue list"
+    }
+  };
+
+  Object.entries(panels).forEach(([name, config]) => {
+    const collapsed = Boolean(project.panelState[name]);
+    config.panel.classList.toggle("collapsed", collapsed);
+    elements.workspace.classList.toggle(`${name}-collapsed`, collapsed);
+    config.button.textContent = collapsed ? "+" : "-";
+    config.button.setAttribute("aria-expanded", String(!collapsed));
+    config.button.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${config.label}`);
+  });
+}
+
+function togglePanel(name) {
+  project.panelState[name] = !project.panelState[name];
+  saveState();
+  applyPanelState();
 }
 
 function getActiveFormation() {
@@ -523,7 +575,6 @@ function animateFormationToTime(time) {
     marker.style.setProperty("--marker-scale", projected.scale);
     marker.style.zIndex = String(Math.round(currentPosition.y) + 2);
     marker.title = `${dancer.name} transitioning (${Math.round(progress * 100)}%)`;
-    updateLegendPosition(dancer.id, currentPosition);
   });
 
   elements.activeFormationLabel.textContent =
@@ -700,16 +751,13 @@ function updateMediaSourceLabel() {
   elements.mediaSourceLabel.textContent = "No media selected";
 }
 
-function updateLegendPosition(dancerId, position) {
-  const row = elements.dancerLegend.querySelector(`[data-dancer-id="${dancerId}"] .legend-subtitle`);
-  if (row) {
-    row.textContent = `X ${position.x.toFixed(1)}% | Y ${position.y.toFixed(1)}%`;
-  }
-}
-
 function updateSelectedDancerUi(dancerId) {
-  elements.stageSurface.querySelectorAll(".dancer-marker").forEach((node) => {
+  elements.stageSurface.querySelectorAll(".dancer-marker, .transition-node, .path-waypoint").forEach((node) => {
     node.classList.toggle("selected", Number(node.dataset.dancerId) === dancerId);
+  });
+
+  elements.stageSurface.querySelectorAll(".transition-lines polyline").forEach((node) => {
+    node.classList.toggle("selected", Number(node.dataset.pathDancerId) === dancerId);
   });
 
   elements.dancerLegend.querySelectorAll(".legend-row").forEach((node) => {
@@ -831,6 +879,53 @@ function beginWaypointDrag(event) {
   window.addEventListener("pointercancel", stop, { once: true });
 }
 
+function beginTransitionEndpointDrag(event) {
+  if (event.button !== 0) {
+    return;
+  }
+
+  event.stopPropagation();
+  const node = event.currentTarget;
+  const dancerId = Number(node.dataset.dancerId);
+  const endpoint = node.dataset.endpoint;
+  const transition = getActiveTransition();
+  const formationId = endpoint === "start"
+    ? transition?.fromFormationId
+    : transition?.toFormationId;
+  const formation = project.formations.find((item) => item.id === formationId);
+  const position = formation?.positions.find((item) => item.dancerId === dancerId);
+
+  if (!transition || !position) {
+    return;
+  }
+
+  project.selectedDancerId = dancerId;
+  updateSelectedDancerUi(dancerId);
+  node.classList.add("dragging");
+  node.setPointerCapture(event.pointerId);
+
+  const move = (moveEvent) => {
+    const nextPosition = unprojectStagePointer(moveEvent.clientX, moveEvent.clientY);
+    position.x = Number(nextPosition.x.toFixed(2));
+    position.y = Number(nextPosition.y.toFixed(2));
+    positionStageElement(node, position);
+    updateTransitionPathElement(transition, dancerId);
+  };
+
+  const stop = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", stop);
+    window.removeEventListener("pointercancel", stop);
+    node.classList.remove("dragging");
+    saveState();
+    render();
+  };
+
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", stop, { once: true });
+  window.addEventListener("pointercancel", stop, { once: true });
+}
+
 function renderTransitionStage(transition) {
   const fromFormation = project.formations.find((formation) => formation.id === transition.fromFormationId);
   const toFormation = project.formations.find((formation) => formation.id === transition.toFormationId);
@@ -868,10 +963,12 @@ function renderTransitionStage(transition) {
     startNode.type = "button";
     startNode.className = `transition-node start-node${dancer.id === project.selectedDancerId ? " selected" : ""}`;
     startNode.dataset.dancerId = String(dancer.id);
+    startNode.dataset.endpoint = "start";
     startNode.style.background = dancer.color;
     startNode.textContent = String(dancer.id);
     startNode.title = `${dancer.name} start`;
     positionStageElement(startNode, start);
+    startNode.addEventListener("pointerdown", beginTransitionEndpointDrag);
     startNode.addEventListener("click", () => selectDancer(dancer.id));
     elements.stageSurface.append(startNode);
 
@@ -879,10 +976,12 @@ function renderTransitionStage(transition) {
     endNode.type = "button";
     endNode.className = `transition-node end-node${dancer.id === project.selectedDancerId ? " selected" : ""}`;
     endNode.dataset.dancerId = String(dancer.id);
+    endNode.dataset.endpoint = "end";
     endNode.style.setProperty("--dancer-color", dancer.color);
     endNode.textContent = String(dancer.id);
     endNode.title = `${dancer.name} destination`;
     positionStageElement(endNode, end);
+    endNode.addEventListener("pointerdown", beginTransitionEndpointDrag);
     endNode.addEventListener("click", () => selectDancer(dancer.id));
     elements.stageSurface.append(endNode);
 
@@ -946,7 +1045,7 @@ function renderStage(formation) {
     } else {
       marker.textContent = String(dancer.id);
     }
-    marker.title = `${dancer.name} (${position.x.toFixed(1)}%, ${position.y.toFixed(1)}%)`;
+    marker.title = dancer.name;
     marker.addEventListener("pointerdown", beginMarkerDrag);
     marker.addEventListener("click", () => {
       if (activeDrag?.dancerId === dancer.id && activeDrag.dragMoved) {
@@ -960,21 +1059,56 @@ function renderStage(formation) {
   });
 }
 
-function renderLegend(formation) {
+function renderLegend() {
   elements.dancerLegend.innerHTML = "";
 
   project.dancers.forEach((dancer) => {
-    const position = formation.positions.find((item) => item.dancerId === dancer.id);
     const row = document.createElement("div");
     row.className = `legend-row${project.selectedDancerId === dancer.id ? " active" : ""}`;
     row.dataset.dancerId = String(dancer.id);
-    row.innerHTML = `
-      <div class="swatch" style="background:${dancer.color}">${dancer.id}</div>
-      <div>
-        <div class="legend-label">${dancer.name}</div>
-        <div class="legend-subtitle">X ${position.x.toFixed(1)}% | Y ${position.y.toFixed(1)}%</div>
-      </div>
-    `;
+
+    const swatch = document.createElement("div");
+    swatch.className = "swatch";
+    swatch.style.background = dancer.color;
+    swatch.textContent = String(dancer.id);
+
+    const details = document.createElement("div");
+    details.className = "legend-details";
+    const nameInput = document.createElement("input");
+    nameInput.className = "dancer-name-input";
+    nameInput.type = "text";
+    nameInput.maxLength = 40;
+    nameInput.value = dancer.name;
+    nameInput.setAttribute("aria-label", `Name for dancer ${dancer.id}`);
+    nameInput.addEventListener("pointerdown", (event) => event.stopPropagation());
+    nameInput.addEventListener("click", (event) => event.stopPropagation());
+    nameInput.addEventListener("input", (event) => {
+      dancer.name = event.target.value;
+      const marker = elements.stageSurface.querySelector(`.dancer-marker[data-dancer-id="${dancer.id}"]`);
+      if (marker) {
+        marker.title = dancer.name;
+      }
+      saveState();
+    });
+    nameInput.addEventListener("blur", (event) => {
+      const fallbackName = `Dancer ${dancer.id}`;
+      dancer.name = event.target.value.trim() || fallbackName;
+      event.target.value = dancer.name;
+      const marker = elements.stageSurface.querySelector(`.dancer-marker[data-dancer-id="${dancer.id}"]`);
+      if (marker) {
+        marker.title = dancer.name;
+      }
+      saveState();
+    });
+    nameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        event.currentTarget.blur();
+      }
+    });
+
+    details.append(nameInput);
+    row.append(swatch, details);
 
     if (project.stageView === "3d" && project.selectedDancerId === dancer.id) {
       const poseControl = document.createElement("label");
@@ -1074,6 +1208,7 @@ function render() {
   elements.addWaypointButton.classList.toggle("active", isAddingWaypoint);
   elements.stageSurface.classList.toggle("adding-waypoint", Boolean(activeTransition && isAddingWaypoint));
   elements.addWaypointButton.textContent = isAddingWaypoint ? "Tap Stage to Place" : "Add Waypoint";
+  applyPanelState();
 
   if (activeTransition) {
     const fromFormation = project.formations.find((formation) => formation.id === activeTransition.fromFormationId);
@@ -1082,12 +1217,12 @@ function render() {
     elements.transitionTitle.textContent = `${fromFormation.name} to ${toFormation.name}`;
     elements.transitionHint.textContent = isAddingWaypoint
       ? `Tap the stage to place a waypoint for ${selectedDancer.name}.`
-      : `Selected: ${selectedDancer.name}. Add or drag waypoints to shape their route.`;
+      : `Selected: ${selectedDancer.name}. Drag the solid start, outlined destination, or any waypoint.`;
   }
   updateMediaSourceLabel();
 
   renderStage(activeFormation);
-  renderLegend(activeFormation);
+  renderLegend();
   renderTimeline(activeFormation.id);
 }
 
@@ -1121,8 +1256,7 @@ function beginMarkerDrag(event) {
     activeDrag.marker.style.top = `${projected.y}%`;
     activeDrag.marker.style.setProperty("--marker-scale", projected.scale);
     activeDrag.marker.style.zIndex = String(Math.round(position.y) + 2);
-    activeDrag.marker.title = `${project.dancers[dancerId - 1].name} (${position.x.toFixed(1)}%, ${position.y.toFixed(1)}%)`;
-    updateLegendPosition(dancerId, position);
+    activeDrag.marker.title = project.dancers[dancerId - 1].name;
   };
 
   const stop = () => {
@@ -1307,6 +1441,10 @@ elements.projectTitleInput.addEventListener("input", (event) => {
   project.title = event.target.value;
   saveState();
 });
+
+elements.togglePlaybackButton.addEventListener("click", () => togglePanel("playback"));
+elements.toggleFormationButton.addEventListener("click", () => togglePanel("formation"));
+elements.toggleCuesButton.addEventListener("click", () => togglePanel("cues"));
 
 elements.youtubeUrlInput.addEventListener("change", (event) => {
   project.youtubeUrl = event.target.value.trim();
