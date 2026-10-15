@@ -20,27 +20,21 @@ const colorPalette = [
   "#9333EA"
 ];
 
-const spriteColumns = [-194, -262, -332, -402, -472, -527, -596, -657];
-const spriteRows = [-67, -191, -310, -432, -546];
+const spriteColumns = ["0%", "33.3333%", "66.6667%", "100%"];
+const spriteRows = ["0%", "50%", "100%"];
 const spritePoseOptions = [
-  { frame: 0, name: "Walk Left" },
-  { frame: 3, name: "Side Groove" },
-  { frame: 6, name: "Reach Left" },
-  { frame: 7, name: "Walk Right" },
-  { frame: 8, name: "Hands Up Left" },
-  { frame: 10, name: "Hands Overhead" },
-  { frame: 16, name: "Low Sweep" },
-  { frame: 17, name: "Deep Crouch" },
-  { frame: 19, name: "Knee Lift" },
-  { frame: 20, name: "Airplane Balance" },
-  { frame: 22, name: "Right Lean" },
-  { frame: 24, name: "Hands Behind Head" },
-  { frame: 26, name: "Open Arms" },
-  { frame: 30, name: "Elbows Up" },
-  { frame: 31, name: "Reach Right" },
-  { frame: 32, name: "Ready Stance" },
-  { frame: 34, name: "Hands to Heart" },
-  { frame: 38, name: "Open Welcome" }
+  { frame: 0, name: "Ready Stance" },
+  { frame: 1, name: "Step Left" },
+  { frame: 2, name: "Step Right" },
+  { frame: 3, name: "Arms Up" },
+  { frame: 4, name: "Arms Out" },
+  { frame: 5, name: "Hip Left" },
+  { frame: 6, name: "Hip Right" },
+  { frame: 7, name: "Lunge Left" },
+  { frame: 8, name: "Lunge Right" },
+  { frame: 9, name: "Low Groove" },
+  { frame: 10, name: "Turn" },
+  { frame: 11, name: "Jump" }
 ];
 
 const elements = {
@@ -98,6 +92,11 @@ let htmlVideo = null;
 let youtubeApiReady = false;
 let pendingYouTubeVideoId = project.youtubeVideoId || "";
 let playbackTimer = null;
+let playbackPathCache = null;
+let orderedFormationsCache = null;
+let renderedMarkers = new Map();
+let lastPlaybackLabel = "";
+let lastTimeLabel = "";
 let activeDrag = null;
 let activeTransitionKey = null;
 let isAddingWaypoint = false;
@@ -434,6 +433,7 @@ function stopPlaybackWatcher() {
     window.cancelAnimationFrame(playbackTimer);
     playbackTimer = null;
   }
+  elements.stageSurface.classList.remove("playing");
 }
 
 function getCurrentMediaTime() {
@@ -469,7 +469,7 @@ function seekCurrentMedia(seconds) {
 }
 
 function syncFormationToTime(time, silent) {
-  const ordered = [...project.formations].sort((a, b) => a.time - b.time);
+  const ordered = getOrderedFormations();
   let target = ordered[0];
 
   for (const formation of ordered) {
@@ -484,7 +484,7 @@ function syncFormationToTime(time, silent) {
 }
 
 function getPlaybackSegment(time) {
-  const ordered = [...project.formations].sort((a, b) => a.time - b.time);
+  const ordered = getOrderedFormations();
   if (ordered.length === 0) {
     return null;
   }
@@ -511,9 +511,20 @@ function getPlaybackSegment(time) {
   };
 }
 
-function getPositionAlongPath(points, progress) {
+function getOrderedFormations() {
+  if (!orderedFormationsCache) {
+    orderedFormationsCache = [...project.formations].sort((a, b) => a.time - b.time);
+  }
+  return orderedFormationsCache;
+}
+
+function preparePath(points) {
   if (points.length < 2) {
-    return points[0] || { x: 50, y: 50 };
+    return {
+      fallback: points[0] || { x: 50, y: 50 },
+      segments: [],
+      totalLength: 0
+    };
   }
 
   const segments = [];
@@ -527,13 +538,21 @@ function getPositionAlongPath(points, progress) {
     totalLength += length;
   }
 
-  if (totalLength === 0) {
-    return { ...points[points.length - 1] };
+  return {
+    fallback: points[points.length - 1],
+    segments,
+    totalLength
+  };
+}
+
+function getPositionAlongPath(path, progress) {
+  if (path.totalLength === 0) {
+    return path.fallback;
   }
 
-  let remaining = clamp(progress, 0, 1) * totalLength;
-  for (const segment of segments) {
-    if (remaining <= segment.length || segment === segments[segments.length - 1]) {
+  let remaining = clamp(progress, 0, 1) * path.totalLength;
+  for (const segment of path.segments) {
+    if (remaining <= segment.length || segment === path.segments[path.segments.length - 1]) {
       const segmentProgress = segment.length === 0 ? 1 : remaining / segment.length;
       return {
         x: segment.start.x + (segment.end.x - segment.start.x) * segmentProgress,
@@ -543,7 +562,37 @@ function getPositionAlongPath(points, progress) {
     remaining -= segment.length;
   }
 
-  return { ...points[points.length - 1] };
+  return path.fallback;
+}
+
+function getPlaybackPaths(fromFormation, toFormation, transition) {
+  const key = getTransitionKey(fromFormation.id, toFormation.id);
+  if (playbackPathCache?.key === key) {
+    return playbackPathCache.paths;
+  }
+
+  const startPositions = new Map(fromFormation.positions.map((position) => [position.dancerId, position]));
+  const endPositions = new Map(toFormation.positions.map((position) => [position.dancerId, position]));
+  const paths = [];
+
+  project.dancers.forEach((dancer) => {
+    const start = startPositions.get(dancer.id);
+    const end = endPositions.get(dancer.id);
+    const marker = renderedMarkers.get(dancer.id);
+    if (!start || !end || !marker) {
+      return;
+    }
+
+    paths.push({
+      dancerId: dancer.id,
+      marker,
+      base: projectStagePosition(start),
+      path: preparePath([start, ...(transition?.paths?.[dancer.id] || []), end])
+    });
+  });
+
+  playbackPathCache = { key, paths };
+  return paths;
 }
 
 function animateFormationToTime(time) {
@@ -559,34 +608,38 @@ function animateFormationToTime(time) {
   const { fromFormation, toFormation, progress } = segment;
   const transition = project.transitions[getTransitionKey(fromFormation.id, toFormation.id)];
 
-  project.dancers.forEach((dancer) => {
-    const start = fromFormation.positions.find((position) => position.dancerId === dancer.id);
-    const end = toFormation.positions.find((position) => position.dancerId === dancer.id);
-    const marker = elements.stageSurface.querySelector(`.dancer-marker[data-dancer-id="${dancer.id}"]`);
-    if (!start || !end || !marker) {
-      return;
-    }
-
-    const route = [start, ...(transition?.paths?.[dancer.id] || []), end];
-    const currentPosition = getPositionAlongPath(route, progress);
+  const stageWidth = elements.stageSurface.clientWidth;
+  const stageHeight = elements.stageSurface.clientHeight;
+  getPlaybackPaths(fromFormation, toFormation, transition).forEach((entry) => {
+    const currentPosition = getPositionAlongPath(entry.path, progress);
     const projected = projectStagePosition(currentPosition);
-    marker.style.left = `${projected.x}%`;
-    marker.style.top = `${projected.y}%`;
-    marker.style.setProperty("--marker-scale", projected.scale);
-    marker.style.zIndex = String(Math.round(currentPosition.y) + 2);
-    marker.title = `${dancer.name} transitioning (${Math.round(progress * 100)}%)`;
+    const translateX = ((projected.x - entry.base.x) / 100) * stageWidth;
+    const translateY = ((projected.y - entry.base.y) / 100) * stageHeight;
+    entry.marker.style.transform = `translate3d(${translateX.toFixed(2)}px, ${translateY.toFixed(2)}px, 0) scale(${projected.scale})`;
+    const nextDepth = String(Math.round(currentPosition.y) + 2);
+    if (entry.marker.style.zIndex !== nextDepth) {
+      entry.marker.style.zIndex = nextDepth;
+    }
   });
 
-  elements.activeFormationLabel.textContent =
-    `${fromFormation.name} to ${toFormation.name} | ${Math.round(progress * 100)}%`;
+  const playbackLabel = `${fromFormation.name} to ${toFormation.name} | ${Math.round(progress * 100)}%`;
+  if (playbackLabel !== lastPlaybackLabel) {
+    elements.activeFormationLabel.textContent = playbackLabel;
+    lastPlaybackLabel = playbackLabel;
+  }
 }
 
 function startPlaybackWatcher() {
   stopPlaybackWatcher();
+  elements.stageSurface.classList.add("playing");
 
   const updatePlayback = () => {
     const time = getCurrentMediaTime();
-    elements.currentTimeLabel.textContent = formatTime(time);
+    const timeLabel = formatTime(time);
+    if (timeLabel !== lastTimeLabel) {
+      elements.currentTimeLabel.textContent = timeLabel;
+      lastTimeLabel = timeLabel;
+    }
     syncFormationToTime(time, true);
     animateFormationToTime(time);
     playbackTimer = window.requestAnimationFrame(updatePlayback);
@@ -712,6 +765,9 @@ function wireHtmlVideoEvents(video) {
     elements.currentTimeLabel.textContent = formatTime(video.currentTime);
   });
   video.addEventListener("timeupdate", () => {
+    if (playbackTimer) {
+      return;
+    }
     elements.currentTimeLabel.textContent = formatTime(video.currentTime);
     syncFormationToTime(video.currentTime, true);
     animateFormationToTime(video.currentTime);
@@ -1005,6 +1061,8 @@ function renderTransitionStage(transition) {
 }
 
 function renderStage(formation) {
+  renderedMarkers = new Map();
+  playbackPathCache = null;
   const transition = getActiveTransition();
   if (transition) {
     renderTransitionStage(transition);
@@ -1031,13 +1089,11 @@ function renderStage(formation) {
     marker.style.zIndex = String(Math.round(position.y) + 2);
     if (is3d) {
       const frameIndex = dancer.spriteFrame;
-      const frameColumn = frameIndex % 8;
-      const frameRow = Math.floor(frameIndex / 8);
+      const frameColumn = frameIndex % 4;
+      const frameRow = Math.floor(frameIndex / 4);
       marker.classList.add("sprite-marker");
-      marker.style.setProperty("--sprite-x", `${spriteColumns[frameColumn]}px`);
-      marker.style.setProperty("--sprite-y", `${spriteRows[frameRow]}px`);
-      marker.style.setProperty("--sprite-x-mobile", `${spriteColumns[frameColumn] * 0.8}px`);
-      marker.style.setProperty("--sprite-y-mobile", `${spriteRows[frameRow] * 0.8}px`);
+      marker.style.setProperty("--sprite-x", spriteColumns[frameColumn]);
+      marker.style.setProperty("--sprite-y", spriteRows[frameRow]);
       marker.innerHTML = `
         <span class="sprite-avatar" aria-hidden="true"></span>
         <span class="marker-number" style="background:${dancer.color}">${dancer.id}</span>
@@ -1056,6 +1112,7 @@ function renderStage(formation) {
       render();
     });
     elements.stageSurface.append(marker);
+    renderedMarkers.set(dancer.id, marker);
   });
 }
 
@@ -1110,10 +1167,9 @@ function renderLegend() {
     details.append(nameInput);
     row.append(swatch, details);
 
-    if (project.stageView === "3d" && project.selectedDancerId === dancer.id) {
-      const poseControl = document.createElement("label");
+    if (project.stageView === "3d") {
+      const poseControl = document.createElement("div");
       poseControl.className = "pose-control";
-      poseControl.innerHTML = "<span>Sprite pose</span>";
       const poseSelect = document.createElement("select");
       poseSelect.setAttribute("aria-label", `Sprite pose for ${dancer.name}`);
       spritePoseOptions.forEach((pose) => {
@@ -1188,6 +1244,8 @@ function renderTimeline(activeFormationId) {
 }
 
 function render() {
+  orderedFormationsCache = null;
+  lastPlaybackLabel = "";
   const activeFormation = getActiveFormation();
   const activeTransition = getActiveTransition();
   elements.projectTitleInput.value = project.title;
@@ -1234,6 +1292,7 @@ function beginMarkerDrag(event) {
 
   project.selectedDancerId = dancerId;
   updateSelectedDancerUi(dancerId);
+  marker.style.transform = "";
 
   activeDrag = {
     dancerId,

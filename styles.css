@@ -59,7 +59,6 @@ textarea {
 .panel {
   border: 1px solid var(--line);
   background: var(--panel);
-  backdrop-filter: blur(20px);
   box-shadow: var(--shadow);
 }
 
@@ -89,7 +88,7 @@ textarea {
   grid-template-columns: var(--playback-column) var(--formation-column) var(--cues-column);
   gap: 18px;
   margin-top: 18px;
-  transition: grid-template-columns 180ms ease;
+  transition: grid-template-columns 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .workspace.playback-collapsed {
@@ -107,6 +106,7 @@ textarea {
 .panel {
   border-radius: 24px;
   padding: 18px;
+  transition: gap 280ms ease, padding 280ms ease;
 }
 
 .video-panel,
@@ -123,7 +123,17 @@ textarea {
 }
 
 .panel-content {
+  max-height: 2400px;
   min-width: 0;
+  opacity: 1;
+  overflow: hidden;
+  transform: translateY(0);
+  visibility: visible;
+  transition:
+    max-height 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease,
+    transform 280ms ease,
+    visibility 0s;
 }
 
 .video-panel .panel-content,
@@ -141,7 +151,21 @@ textarea {
 }
 
 .panel.collapsed .panel-content {
-  display: none;
+  flex: 0 1 auto;
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+  visibility: hidden;
+  transition:
+    max-height 320ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 150ms ease,
+    transform 220ms ease,
+    visibility 0s 320ms;
+}
+
+.panel.collapsed {
+  gap: 0;
 }
 
 .panel.collapsed .panel-header-actions > :not(.collapse-button) {
@@ -433,20 +457,13 @@ h2 {
 }
 
 .pose-control {
-  display: grid;
+  display: block;
   grid-column: 1 / -1;
-  grid-template-columns: auto 1fr;
-  gap: 8px;
-  align-items: center;
   padding: 8px 4px 2px 46px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 .pose-control select {
+  width: 100%;
   min-width: 0;
   border: 1px solid rgba(139, 92, 246, 0.45);
   border-radius: 9px;
@@ -495,6 +512,7 @@ h2 {
   overflow: hidden;
   min-height: 630px;
   isolation: isolate;
+  contain: layout paint;
   border: 1px solid rgba(34, 211, 238, 0.2);
   border-radius: 28px;
   background:
@@ -585,6 +603,12 @@ h2 {
   touch-action: none;
   transform: scale(var(--marker-scale, 1));
   transition: box-shadow 120ms ease, outline-color 120ms ease, transform 180ms ease;
+  backface-visibility: hidden;
+}
+
+.stage-surface.playing .dancer-marker {
+  transition: none;
+  will-change: transform;
 }
 
 .dancer-marker:active,
@@ -598,16 +622,16 @@ h2 {
 }
 
 .dancer-marker.sprite-marker {
-  width: 80px;
-  height: 110px;
-  margin-top: -100px;
-  margin-left: -40px;
+  width: 96px;
+  height: 96px;
+  margin-top: -88px;
+  margin-left: -48px;
   overflow: visible;
   border: 0;
   outline: 0;
   background: transparent !important;
   box-shadow: none;
-  transform-origin: 50% 92%;
+  transform-origin: 50% 88%;
 }
 
 .dancer-marker.sprite-marker.selected {
@@ -621,10 +645,10 @@ h2 {
   inset: 0;
   display: block;
   overflow: hidden;
-  background-image: url("./assets/dancer-sprite-sheet.png");
+  background-image: url("./assets/dancer-sprite-sheet.png?v=2");
   background-repeat: no-repeat;
   background-position: var(--sprite-x) var(--sprite-y);
-  background-size: 941px 706px;
+  background-size: 400% 300%;
   image-rendering: pixelated;
   pointer-events: none;
 }
@@ -984,7 +1008,6 @@ h2 {
   }
 
   .pose-control {
-    grid-template-columns: 1fr;
     padding-left: 4px;
   }
 
@@ -1002,15 +1025,10 @@ h2 {
   }
 
   .dancer-marker.sprite-marker {
-    width: 64px;
-    height: 88px;
-    margin-top: -80px;
-    margin-left: -32px;
-  }
-
-  .sprite-avatar {
-    background-position: var(--sprite-x-mobile) var(--sprite-y-mobile);
-    background-size: 753px 565px;
+    width: 80px;
+    height: 80px;
+    margin-top: -72px;
+    margin-left: -40px;
   }
 
   .marker-number {
@@ -1025,5 +1043,13 @@ h2 {
 
   h2 {
     font-size: 21px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace,
+  .panel,
+  .panel-content {
+    transition-duration: 1ms;
   }
 }
