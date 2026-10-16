@@ -17,17 +17,56 @@ Desktop choreography charting app built with Electron.
 - Save and open choreography projects as JSON.
 - Persist the last working state locally between launches.
 
-## Run
+## Run locally
+
+Node.js 22 or newer is required. Node.js 24 LTS is recommended.
+
+### macOS
+
+If you already have [nvm](https://github.com/nvm-sh/nvm) installed, run these commands from the project folder:
+
+```bash
+nvm install 24
+nvm use
+npm install
+npm start
+```
+
+The included `.nvmrc` makes `nvm use` select Node.js 24. To use it by default in new Terminal windows, run:
+
+```bash
+nvm alias default 24
+```
+
+If you do not use nvm, install the macOS package for the current [Node.js LTS release](https://nodejs.org/en/download), reopen Terminal, and then verify the version and run the app:
+
+```bash
+node --version
+npm --version
+npm install
+npm start
+```
+
+If `node --version` still reports an old release after installing a current one, an existing nvm configuration is probably taking precedence. Use `nvm install 24` followed by `nvm use` as shown above.
+
+Do not use `sudo npm install`. If npm reports that `~/.npm` contains root-owned files from an earlier sudo install, repair that directory once and retry:
+
+```bash
+sudo chown -R "$(id -u)":"$(id -g)" "$HOME/.npm"
+npm install
+```
+
+### Windows and Linux
 
 1. Install dependencies:
 
-```powershell
+```bash
 npm install
 ```
 
 2. Start the desktop app:
 
-```powershell
+```bash
 npm start
 ```
 

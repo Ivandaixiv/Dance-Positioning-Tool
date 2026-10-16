@@ -42,9 +42,10 @@ const elements = {
   playbackPanel: document.querySelector("#playbackPanel"),
   formationPanel: document.querySelector("#formationPanel"),
   cuesPanel: document.querySelector("#cuesPanel"),
-  togglePlaybackButton: document.querySelector("#togglePlaybackButton"),
-  toggleFormationButton: document.querySelector("#toggleFormationButton"),
   toggleCuesButton: document.querySelector("#toggleCuesButton"),
+  cueCountLabel: document.querySelector("#cueCountLabel"),
+  fileMenuButton: document.querySelector("#fileMenuButton"),
+  fileMenu: document.querySelector("#fileMenu"),
   projectTitleInput: document.querySelector("#projectTitleInput"),
   youtubeUrlInput: document.querySelector("#youtubeUrlInput"),
   loadVideoButton: document.querySelector("#loadVideoButton"),
@@ -296,32 +297,14 @@ function saveState() {
 }
 
 function applyPanelState() {
-  const panels = {
-    playback: {
-      panel: elements.playbackPanel,
-      button: elements.togglePlaybackButton,
-      label: "playback"
-    },
-    formation: {
-      panel: elements.formationPanel,
-      button: elements.toggleFormationButton,
-      label: "formation editor"
-    },
-    cues: {
-      panel: elements.cuesPanel,
-      button: elements.toggleCuesButton,
-      label: "cue list"
-    }
-  };
-
-  Object.entries(panels).forEach(([name, config]) => {
-    const collapsed = Boolean(project.panelState[name]);
-    config.panel.classList.toggle("collapsed", collapsed);
-    elements.workspace.classList.toggle(`${name}-collapsed`, collapsed);
-    config.button.textContent = collapsed ? "+" : "-";
-    config.button.setAttribute("aria-expanded", String(!collapsed));
-    config.button.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${config.label}`);
-  });
+  const timelineExpanded = Boolean(project.panelState.cues);
+  elements.cuesPanel.classList.toggle("expanded", timelineExpanded);
+  elements.toggleCuesButton.textContent = timelineExpanded ? "Compact" : "Expand";
+  elements.toggleCuesButton.setAttribute("aria-expanded", String(timelineExpanded));
+  elements.toggleCuesButton.setAttribute(
+    "aria-label",
+    `${timelineExpanded ? "Compact" : "Expand"} cue timeline`
+  );
 }
 
 function togglePanel(name) {
@@ -1201,18 +1184,29 @@ function renderTimeline(activeFormationId) {
   elements.timelineList.innerHTML = "";
 
   const orderedFormations = [...project.formations].sort((a, b) => a.time - b.time);
+  elements.cueCountLabel.textContent = `${orderedFormations.length} ${orderedFormations.length === 1 ? "formation" : "formations"}`;
 
   orderedFormations.forEach((formation, index) => {
       const card = document.createElement("article");
       card.className = `timeline-card${formation.id === activeFormationId ? " active" : ""}`;
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.setAttribute("aria-current", formation.id === activeFormationId ? "true" : "false");
       card.innerHTML = `
         <span class="timeline-card-time">${formatTime(formation.time)}</span>
         <h3>${formation.name}</h3>
         <p>${formation.notes || "No notes yet."}</p>
       `;
-      card.addEventListener("click", () => {
+      const activateFormation = () => {
         setActiveFormation(formation.id);
         seekCurrentMedia(formation.time);
+      };
+      card.addEventListener("click", activateFormation);
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          activateFormation();
+        }
       });
       elements.timelineList.append(card);
 
@@ -1229,7 +1223,7 @@ function renderTimeline(activeFormationId) {
       transitionCard.type = "button";
       transitionCard.className = `transition-card${activeTransitionKey === getTransitionKey(formation.id, nextFormation.id) ? " active" : ""}`;
       transitionCard.innerHTML = `
-        <span class="transition-arrow" aria-hidden="true">↓</span>
+        <span class="transition-arrow" aria-hidden="true">→</span>
         <span>
           <strong>Map transition</strong>
           <small>${formation.name} to ${nextFormation.name}</small>
@@ -1496,14 +1490,29 @@ function createFreshProject() {
   elements.videoStatus.textContent = "No video loaded";
 }
 
+function setFileMenuOpen(open) {
+  elements.fileMenu.classList.toggle("hidden", !open);
+  elements.fileMenuButton.setAttribute("aria-expanded", String(open));
+}
+
 elements.projectTitleInput.addEventListener("input", (event) => {
   project.title = event.target.value;
   saveState();
 });
 
-elements.togglePlaybackButton.addEventListener("click", () => togglePanel("playback"));
-elements.toggleFormationButton.addEventListener("click", () => togglePanel("formation"));
 elements.toggleCuesButton.addEventListener("click", () => togglePanel("cues"));
+elements.fileMenuButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setFileMenuOpen(elements.fileMenu.classList.contains("hidden"));
+});
+elements.fileMenu.addEventListener("click", (event) => event.stopPropagation());
+document.addEventListener("click", () => setFileMenuOpen(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !elements.fileMenu.classList.contains("hidden")) {
+    setFileMenuOpen(false);
+    elements.fileMenuButton.focus();
+  }
+});
 
 elements.youtubeUrlInput.addEventListener("change", (event) => {
   project.youtubeUrl = event.target.value.trim();
@@ -1634,9 +1643,18 @@ elements.captureTimestampButton.addEventListener("click", setCurrentFormationTim
 elements.jumpToFormationButton.addEventListener("click", () => {
   seekCurrentMedia(getActiveFormation().time);
 });
-elements.saveProjectButton.addEventListener("click", saveProjectToDisk);
-elements.loadProjectButton.addEventListener("click", loadProjectFromDisk);
-elements.newProjectButton.addEventListener("click", createFreshProject);
+elements.saveProjectButton.addEventListener("click", () => {
+  setFileMenuOpen(false);
+  saveProjectToDisk();
+});
+elements.loadProjectButton.addEventListener("click", () => {
+  setFileMenuOpen(false);
+  loadProjectFromDisk();
+});
+elements.newProjectButton.addEventListener("click", () => {
+  setFileMenuOpen(false);
+  createFreshProject();
+});
 
 render();
 ensureYouTubeApi();

@@ -4,6 +4,6 @@
   "description": "Create and view choreography positioning charts synced to video.",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#10121B",
-  "theme_color": "#10121B"
+  "background_color": "#0D111A",
+  "theme_color": "#0D111A"
 }

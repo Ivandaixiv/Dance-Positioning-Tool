@@ -9,21 +9,33 @@
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ali Dance Tool</title>
-    <meta name="theme-color" content="#10121B" />
+    <meta name="theme-color" content="#0D111A" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div>
-          <p class="eyebrow">Choreography Mapping</p>
-          <h1>Ali Dance Tool</h1>
+        <div class="file-menu-wrap">
+          <button id="fileMenuButton" class="file-button" type="button" aria-haspopup="menu" aria-expanded="false">File</button>
+          <div id="fileMenu" class="file-menu hidden" role="menu" aria-label="Project file actions">
+            <button id="newProjectButton" type="button" role="menuitem">
+              <span>New project</span>
+              <small>Start with a blank stage</small>
+            </button>
+            <button id="loadProjectButton" type="button" role="menuitem">
+              <span>Open project</span>
+              <small>Load a choreography JSON file</small>
+            </button>
+            <button id="saveProjectButton" type="button" role="menuitem">
+              <span>Save project</span>
+              <small>Save the current project as JSON</small>
+            </button>
+          </div>
         </div>
-        <div class="topbar-actions">
-          <button id="newProjectButton" class="ghost-button">New Project</button>
-          <button id="loadProjectButton" class="ghost-button">Open JSON</button>
-          <button id="saveProjectButton" class="primary-button">Save JSON</button>
+        <div class="app-title">
+          <h1>Ali Dance Tool</h1>
+          <span>Choreography workspace</span>
         </div>
       </header>
 
@@ -37,7 +49,6 @@
             <div class="panel-header-actions">
               <button id="jumpToFormationButton" class="ghost-button">Seek To Formation</button>
               <button id="captureTimestampButton" class="ghost-button">Use Current Time</button>
-              <button id="togglePlaybackButton" class="collapse-button ghost-button" type="button" aria-label="Collapse playback" aria-expanded="true">-</button>
             </div>
           </div>
 
@@ -93,7 +104,6 @@
               <button id="autoArrangeButton" class="ghost-button">Auto Arrange</button>
               <button id="duplicateFormationButton" class="ghost-button">Duplicate</button>
               <button id="addFormationButton" class="primary-button">Add Formation</button>
-              <button id="toggleFormationButton" class="collapse-button ghost-button" type="button" aria-label="Collapse formation editor" aria-expanded="true">-</button>
             </div>
           </div>
 
@@ -126,6 +136,24 @@
               <textarea id="formationNotesInput" rows="2" placeholder="Counts, camera notes, or transitions"></textarea>
             </label>
 
+            <section id="cuesPanel" class="timeline-drawer" aria-label="Cue timeline">
+              <div class="timeline-header">
+                <div class="timeline-heading">
+                  <strong>Cue timeline</strong>
+                  <span id="cueCountLabel">1 formation</span>
+                </div>
+                <div class="timeline-actions">
+                  <button id="sortTimelineButton" class="ghost-button small-button" type="button">Sort by time</button>
+                  <button id="deleteFormationButton" class="danger-button small-button" type="button">Delete cue</button>
+                  <button id="toggleCuesButton" class="ghost-button small-button" type="button" aria-label="Expand cue timeline" aria-expanded="false">Expand</button>
+                </div>
+              </div>
+
+              <div id="cuesContent" class="timeline-content">
+                <div id="timelineList" class="timeline-list"></div>
+              </div>
+            </section>
+
             <div id="transitionToolbar" class="transition-toolbar hidden">
               <div>
                 <p class="eyebrow">Transition Path Editor</p>
@@ -143,24 +171,6 @@
               <div class="legend" id="dancerLegend"></div>
               <div id="stageSurface" class="stage-surface"></div>
             </div>
-          </div>
-        </section>
-
-        <section id="cuesPanel" class="panel timeline-panel">
-          <div class="panel-header">
-            <div>
-              <p class="eyebrow">Cue List</p>
-              <h2>Formations</h2>
-            </div>
-            <div class="panel-header-actions compact">
-              <button id="sortTimelineButton" class="ghost-button">Sort By Time</button>
-              <button id="deleteFormationButton" class="danger-button">Delete</button>
-              <button id="toggleCuesButton" class="collapse-button ghost-button" type="button" aria-label="Collapse cue list" aria-expanded="true">-</button>
-            </div>
-          </div>
-
-          <div id="cuesContent" class="panel-content">
-            <div id="timelineList" class="timeline-list"></div>
           </div>
         </section>
       </main>
