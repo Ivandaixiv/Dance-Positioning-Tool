@@ -52,16 +52,22 @@
           <h1>Dance Tool</h1>
           <span>Choreography workspace</span>
         </div>
-        <button id="themeToggleButton" class="theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Switch to dark mode" title="Switch to dark mode">
-          <svg class="theme-icon sun-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="3.5"></circle>
-            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
-          </svg>
-          <span class="theme-toggle-thumb" aria-hidden="true"></span>
-          <svg class="theme-icon moon-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"></path>
-          </svg>
-        </button>
+        <div class="topbar-help-actions">
+          <button id="helpButton" class="help-button" type="button" aria-haspopup="dialog" aria-controls="helpDialog">
+            <span class="help-button-icon" aria-hidden="true">?</span>
+            <span>Help</span>
+          </button>
+          <button id="themeToggleButton" class="theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Switch to dark mode" title="Switch to dark mode">
+            <svg class="theme-icon sun-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="3.5"></circle>
+              <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+            </svg>
+            <span class="theme-toggle-thumb" aria-hidden="true"></span>
+            <svg class="theme-icon moon-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"></path>
+            </svg>
+          </button>
+        </div>
       </header>
 
       <main id="workspace" class="workspace">
@@ -281,6 +287,74 @@
       </main>
 
     </div>
+
+    <dialog id="helpDialog" class="help-dialog" aria-labelledby="helpDialogTitle" aria-describedby="helpDialogIntro">
+      <div class="help-dialog-card">
+        <header class="help-dialog-header">
+          <div>
+            <p class="eyebrow">Quick Start</p>
+            <h2 id="helpDialogTitle">Create your first dance plan</h2>
+            <p id="helpDialogIntro">Follow these steps from top to bottom. You can reopen this guide from Help at any time.</p>
+          </div>
+          <button id="helpCloseButton" class="help-close-button" type="button" aria-label="Close help">&times;</button>
+        </header>
+
+        <ol class="help-steps">
+          <li>
+            <span class="help-step-number" aria-hidden="true">1</span>
+            <div>
+              <h3>Load your rehearsal video</h3>
+              <p>Paste a YouTube link and select <strong>Load Video</strong>, or choose <strong>Open MP4</strong> for a downloaded video.</p>
+            </div>
+          </li>
+          <li>
+            <span class="help-step-number" aria-hidden="true">2</span>
+            <div>
+              <h3>Set the music timing</h3>
+              <p>Enter the BPM and music start time below the video. Scrub the music map to find the exact moment you need.</p>
+            </div>
+          </li>
+          <li>
+            <span class="help-step-number" aria-hidden="true">3</span>
+            <div>
+              <h3>Prepare your dancers</h3>
+              <p>Add as many dancers as needed. Rename them in the roster, select a color from the numbered bubble, and choose a pose.</p>
+            </div>
+          </li>
+          <li>
+            <span class="help-step-number" aria-hidden="true">4</span>
+            <div>
+              <h3>Build each formation</h3>
+              <p>Play to the right moment, select <strong>Use Current Time</strong>, then drag dancers into place. Click dancers to select several at once.</p>
+            </div>
+          </li>
+          <li>
+            <span class="help-step-number" aria-hidden="true">5</span>
+            <div>
+              <h3>Map the transition</h3>
+              <p>Open the <strong>Map transition</strong> block between two cues. Drag the start and end bubbles, then add waypoints for curved or crossing paths.</p>
+            </div>
+          </li>
+          <li>
+            <span class="help-step-number" aria-hidden="true">6</span>
+            <div>
+              <h3>Preview and save</h3>
+              <p>Play the video to preview movement in <strong>3D Plan</strong>. Use <strong>File &gt; Save project</strong> to move the JSON file between desktop and phone.</p>
+            </div>
+          </li>
+        </ol>
+
+        <aside class="help-tip">
+          <strong>Good to know</strong>
+          <span>Formation cues stay in timestamp order. Notes appear over the stage when their formation becomes active.</span>
+        </aside>
+
+        <footer class="help-dialog-footer">
+          <span><kbd>Esc</kbd> closes this guide</span>
+          <button id="helpStartButton" class="primary-button" type="button">Start choreographing</button>
+        </footer>
+      </div>
+    </dialog>
 
     <input id="projectFileInput" class="visually-hidden" type="file" accept=".json,application/json" />
     <input id="videoFileInput" class="visually-hidden" type="file" accept="video/mp4,video/quicktime,video/webm,video/*" />

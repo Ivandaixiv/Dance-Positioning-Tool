@@ -57,6 +57,10 @@ const elements = {
   cueCountLabel: document.querySelector("#cueCountLabel"),
   fileMenuButton: document.querySelector("#fileMenuButton"),
   fileMenu: document.querySelector("#fileMenu"),
+  helpButton: document.querySelector("#helpButton"),
+  helpDialog: document.querySelector("#helpDialog"),
+  helpCloseButton: document.querySelector("#helpCloseButton"),
+  helpStartButton: document.querySelector("#helpStartButton"),
   themeToggleButton: document.querySelector("#themeToggleButton"),
   themeColorMeta: document.querySelector("#themeColorMeta"),
   undoButton: document.querySelector("#undoButton"),
@@ -2033,6 +2037,26 @@ function setFileMenuOpen(open) {
   elements.fileMenuButton.setAttribute("aria-expanded", String(open));
 }
 
+function openHelpDialog() {
+  setFileMenuOpen(false);
+  document.body.classList.add("help-open");
+  if (typeof elements.helpDialog.showModal === "function") {
+    elements.helpDialog.showModal();
+  } else {
+    elements.helpDialog.setAttribute("open", "");
+  }
+}
+
+function closeHelpDialog() {
+  if (typeof elements.helpDialog.close === "function") {
+    elements.helpDialog.close();
+  } else {
+    elements.helpDialog.removeAttribute("open");
+    document.body.classList.remove("help-open");
+    elements.helpButton.focus();
+  }
+}
+
 function applyTheme(theme, persist = true) {
   const normalizedTheme = theme === "dark" ? "dark" : "light";
   document.documentElement.dataset.theme = normalizedTheme;
@@ -2055,6 +2079,16 @@ elements.projectTitleInput.addEventListener("input", (event) => {
 });
 
 elements.toggleCuesButton.addEventListener("click", () => togglePanel("cues"));
+elements.helpButton.addEventListener("click", openHelpDialog);
+elements.helpCloseButton.addEventListener("click", closeHelpDialog);
+elements.helpStartButton.addEventListener("click", closeHelpDialog);
+elements.helpDialog.addEventListener("click", (event) => {
+  if (event.target === elements.helpDialog) closeHelpDialog();
+});
+elements.helpDialog.addEventListener("close", () => {
+  document.body.classList.remove("help-open");
+  elements.helpButton.focus();
+});
 elements.themeToggleButton.addEventListener("click", () => {
   const currentTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
   applyTheme(currentTheme === "dark" ? "light" : "dark");
@@ -2066,6 +2100,7 @@ elements.fileMenuButton.addEventListener("click", (event) => {
 elements.fileMenu.addEventListener("click", (event) => event.stopPropagation());
 document.addEventListener("click", () => setFileMenuOpen(false));
 document.addEventListener("keydown", (event) => {
+  if (elements.helpDialog.open) return;
   if (event.key === "Escape" && !elements.fileMenu.classList.contains("hidden")) {
     setFileMenuOpen(false);
     elements.fileMenuButton.focus();
