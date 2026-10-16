@@ -1619,3 +1619,301 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
+
+/* Light and dark themes */
+:root {
+  color-scheme: light;
+  --background: #f3f5f9;
+  --surface: #ffffff;
+  --surface-raised: #edf1f6;
+  --primary: #7c3aed;
+  --primary-strong: #6d28d9;
+  --accent: #087f98;
+  --text: #182033;
+  --ink: var(--text);
+  --muted: #647187;
+  --panel: rgba(255, 255, 255, 0.98);
+  --line: rgba(51, 65, 85, 0.2);
+  --danger: #be3455;
+  --shadow: 0 8px 24px rgba(30, 41, 59, 0.1);
+  --control-bg: #f8fafc;
+  --control-hover: #eef2f7;
+  --subtle-bg: rgba(241, 245, 249, 0.9);
+  --menu-bg: #ffffff;
+  --player-bg: #0b0f18;
+  --player-muted: #a8b3c7;
+  --stage-bg: #f7f9fd;
+  --stage-wash: rgba(124, 58, 237, 0.055);
+  --stage-grid-x: rgba(8, 127, 152, 0.14);
+  --stage-grid-y: rgba(124, 58, 237, 0.12);
+  --stage-shadow: inset 0 0 42px rgba(100, 116, 139, 0.12);
+  --overlay-bg: rgba(255, 255, 255, 0.9);
+  --active-bg: linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(8, 127, 152, 0.05));
+  --transition-bg: rgba(8, 127, 152, 0.055);
+  --transition-hover: rgba(8, 127, 152, 0.11);
+  --danger-bg: rgba(190, 52, 85, 0.09);
+  --danger-border: rgba(190, 52, 85, 0.3);
+  --danger-text: #9f2443;
+  --placeholder: #7b879a;
+  --toggle-thumb: #ffffff;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0d111a;
+  --surface: #171c28;
+  --surface-raised: #252a3d;
+  --primary: #8b5cf6;
+  --primary-strong: #7c3aed;
+  --accent: #22d3ee;
+  --text: #f8fafc;
+  --ink: var(--text);
+  --muted: #94a3b8;
+  --panel: rgba(23, 28, 40, 0.97);
+  --line: rgba(148, 163, 184, 0.22);
+  --danger: #fb7185;
+  --shadow: 0 8px 24px rgba(2, 6, 23, 0.26);
+  --control-bg: rgba(16, 18, 27, 0.72);
+  --control-hover: rgba(16, 18, 27, 0.36);
+  --subtle-bg: rgba(16, 18, 27, 0.55);
+  --menu-bg: #171c28;
+  --player-bg: #090b12;
+  --player-muted: #94a3b8;
+  --stage-bg: #121622;
+  --stage-wash: rgba(139, 92, 246, 0.08);
+  --stage-grid-x: rgba(34, 211, 238, 0.13);
+  --stage-grid-y: rgba(139, 92, 246, 0.15);
+  --stage-shadow: inset 0 0 60px rgba(2, 6, 23, 0.55);
+  --overlay-bg: rgba(16, 18, 27, 0.86);
+  --active-bg: linear-gradient(135deg, rgba(139, 92, 246, 0.18), rgba(34, 211, 238, 0.06));
+  --transition-bg: rgba(34, 211, 238, 0.05);
+  --transition-hover: rgba(34, 211, 238, 0.11);
+  --danger-bg: rgba(251, 113, 133, 0.16);
+  --danger-border: rgba(251, 113, 133, 0.3);
+  --danger-text: #fff1f2;
+  --placeholder: #64748b;
+  --toggle-thumb: #414a60;
+}
+
+body {
+  background:
+    linear-gradient(135deg, rgba(124, 58, 237, 0.07), transparent 34%),
+    var(--background);
+}
+
+.theme-toggle {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  width: 62px;
+  height: 30px;
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 3px;
+  color: var(--muted);
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.theme-toggle-thumb {
+  position: absolute;
+  z-index: 0;
+  top: 3px;
+  left: 3px;
+  width: 26px;
+  height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--toggle-thumb);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.13);
+  transition: transform 180ms ease;
+}
+
+:root[data-theme="dark"] .theme-toggle-thumb {
+  transform: translateX(28px);
+}
+
+.theme-icon {
+  position: relative;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  margin: auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.moon-icon path {
+  fill: currentColor;
+  stroke: none;
+}
+
+.sun-icon,
+:root[data-theme="dark"] .moon-icon {
+  color: var(--primary);
+}
+
+.moon-icon,
+:root[data-theme="dark"] .sun-icon {
+  color: var(--muted);
+}
+
+.topbar,
+.panel {
+  background: var(--panel);
+}
+
+.file-menu {
+  background: var(--menu-bg);
+}
+
+.file-menu button + button {
+  border-color: var(--line);
+}
+
+.field input,
+.field textarea,
+.view-switcher {
+  color: var(--text);
+  background: var(--control-bg);
+}
+
+.field input::placeholder,
+.field textarea::placeholder {
+  color: var(--placeholder);
+}
+
+.primary-button,
+.view-button.active,
+.file-button {
+  color: #ffffff;
+}
+
+.ghost-button {
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.ghost-button:hover {
+  background: var(--control-hover);
+}
+
+.danger-button {
+  color: var(--danger-text);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+.source-banner,
+.status-card,
+.legend,
+.timeline-card {
+  background: var(--subtle-bg);
+}
+
+.player-frame {
+  background:
+    radial-gradient(circle at center, rgba(139, 92, 246, 0.18), transparent 55%),
+    var(--player-bg);
+}
+
+.player-placeholder {
+  color: var(--player-muted);
+}
+
+.dancer-name-input {
+  color: var(--text);
+}
+
+.dancer-name-input:hover {
+  background: var(--control-hover);
+}
+
+.dancer-name-input:focus {
+  background: var(--control-bg);
+}
+
+.pose-control select {
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.transition-toolbar {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.12), rgba(34, 211, 238, 0.05));
+}
+
+.timeline-drawer {
+  background: var(--subtle-bg);
+}
+
+.timeline-card.active {
+  background: var(--active-bg);
+}
+
+.transition-card {
+  color: var(--text);
+  background: var(--transition-bg);
+}
+
+.transition-card:hover,
+.transition-card.active {
+  background: var(--transition-hover);
+}
+
+.stage-surface {
+  background:
+    radial-gradient(circle at 50% 4%, rgba(34, 211, 238, 0.09), transparent 36%),
+    var(--stage-bg);
+  box-shadow: var(--stage-shadow);
+}
+
+.stage-surface::before {
+  background:
+    repeating-linear-gradient(
+      to right,
+      var(--stage-grid-x) 0,
+      var(--stage-grid-x) 1px,
+      transparent 1px,
+      transparent 10%
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      var(--stage-grid-y) 0,
+      var(--stage-grid-y) 1px,
+      transparent 1px,
+      transparent 12.5%
+    ),
+    linear-gradient(180deg, transparent, var(--stage-wash));
+}
+
+.stage-surface.view-3d::before {
+  background:
+    linear-gradient(78deg, transparent 49.8%, var(--stage-grid-x) 50%, transparent 50.2%),
+    linear-gradient(84deg, transparent 49.8%, var(--stage-grid-x) 50%, transparent 50.2%),
+    linear-gradient(96deg, transparent 49.8%, var(--stage-grid-x) 50%, transparent 50.2%),
+    linear-gradient(102deg, transparent 49.8%, var(--stage-grid-x) 50%, transparent 50.2%),
+    repeating-linear-gradient(
+      to bottom,
+      var(--stage-grid-y) 0,
+      var(--stage-grid-y) 1px,
+      transparent 1px,
+      transparent 11%
+    ),
+    linear-gradient(180deg, transparent, var(--stage-wash));
+  box-shadow: var(--stage-shadow);
+}
+
+.end-node {
+  background: var(--overlay-bg);
+}

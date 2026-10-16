@@ -9,6 +9,7 @@ Desktop choreography charting app built with Electron.
 - Add up to 30 dancers in the current UI, with the default layout tuned for 12.
 - Drag dancers on the stage for each formation.
 - Switch between an editable 2D plan and a perspective sprite stage.
+- Switch between light and dark themes, with the preference remembered locally.
 - Select dancers from the left roster and assign one of 12 standard dance poses.
 - Map color-coded dancer pathways between each pair of formation cues.
 - During video playback, dancer bubbles and sprite-stage characters animate along the saved transition paths.

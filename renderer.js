@@ -1,4 +1,5 @@
 const STORAGE_KEY = "ali-dance-tool-project";
+const THEME_STORAGE_KEY = "ali-dance-tool-theme";
 const YOUTUBE_API_URL = "https://www.youtube.com/iframe_api";
 
 const colorPalette = [
@@ -46,6 +47,8 @@ const elements = {
   cueCountLabel: document.querySelector("#cueCountLabel"),
   fileMenuButton: document.querySelector("#fileMenuButton"),
   fileMenu: document.querySelector("#fileMenu"),
+  themeToggleButton: document.querySelector("#themeToggleButton"),
+  themeColorMeta: document.querySelector("#themeColorMeta"),
   projectTitleInput: document.querySelector("#projectTitleInput"),
   youtubeUrlInput: document.querySelector("#youtubeUrlInput"),
   loadVideoButton: document.querySelector("#loadVideoButton"),
@@ -1495,12 +1498,32 @@ function setFileMenuOpen(open) {
   elements.fileMenuButton.setAttribute("aria-expanded", String(open));
 }
 
+function applyTheme(theme, persist = true) {
+  const normalizedTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = normalizedTheme;
+  const isDark = normalizedTheme === "dark";
+  const nextTheme = isDark ? "light" : "dark";
+  elements.themeToggleButton.setAttribute("aria-checked", String(isDark));
+  elements.themeToggleButton.setAttribute("aria-label", `Switch to ${nextTheme} mode`);
+  elements.themeToggleButton.title = `Switch to ${nextTheme} mode`;
+  elements.themeColorMeta.setAttribute("content", isDark ? "#0D111A" : "#F3F5F9");
+  if (persist) {
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, normalizedTheme);
+    } catch {}
+  }
+}
+
 elements.projectTitleInput.addEventListener("input", (event) => {
   project.title = event.target.value;
   saveState();
 });
 
 elements.toggleCuesButton.addEventListener("click", () => togglePanel("cues"));
+elements.themeToggleButton.addEventListener("click", () => {
+  const currentTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  applyTheme(currentTheme === "dark" ? "light" : "dark");
+});
 elements.fileMenuButton.addEventListener("click", (event) => {
   event.stopPropagation();
   setFileMenuOpen(elements.fileMenu.classList.contains("hidden"));
@@ -1656,6 +1679,7 @@ elements.newProjectButton.addEventListener("click", () => {
   createFreshProject();
 });
 
+applyTheme(document.documentElement.dataset.theme, false);
 render();
 ensureYouTubeApi();
 
