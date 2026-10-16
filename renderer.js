@@ -1,6 +1,17 @@
-const STORAGE_KEY = "ali-dance-tool-project";
-const THEME_STORAGE_KEY = "ali-dance-tool-theme";
+const STORAGE_KEY = "dance-tool-project";
+const THEME_STORAGE_KEY = "dance-tool-theme";
 const YOUTUBE_API_URL = "https://www.youtube.com/iframe_api";
+const {
+  SCHEMA_VERSION,
+  HistoryStack,
+  alignPositions,
+  applyTemplate,
+  countInfo,
+  createTemplatePositions,
+  deepClone,
+  secondsPerBeat,
+  snapPosition
+} = window.DanceCore;
 
 const colorPalette = [
   "#E85D5D",
@@ -49,6 +60,8 @@ const elements = {
   fileMenu: document.querySelector("#fileMenu"),
   themeToggleButton: document.querySelector("#themeToggleButton"),
   themeColorMeta: document.querySelector("#themeColorMeta"),
+  undoButton: document.querySelector("#undoButton"),
+  redoButton: document.querySelector("#redoButton"),
   projectTitleInput: document.querySelector("#projectTitleInput"),
   youtubeUrlInput: document.querySelector("#youtubeUrlInput"),
   loadVideoButton: document.querySelector("#loadVideoButton"),
@@ -85,6 +98,31 @@ const elements = {
   saveProjectButton: document.querySelector("#saveProjectButton"),
   loadProjectButton: document.querySelector("#loadProjectButton"),
   newProjectButton: document.querySelector("#newProjectButton"),
+  selectionCountLabel: document.querySelector("#selectionCountLabel"),
+  selectAllDancersButton: document.querySelector("#selectAllDancersButton"),
+  clearSelectionButton: document.querySelector("#clearSelectionButton"),
+  deleteSelectedDancersButton: document.querySelector("#deleteSelectedDancersButton"),
+  formationTemplateSelect: document.querySelector("#formationTemplateSelect"),
+  previewTemplateButton: document.querySelector("#previewTemplateButton"),
+  applyTemplateButton: document.querySelector("#applyTemplateButton"),
+  alignmentButtons: [...document.querySelectorAll("[data-align]")],
+  showGridInput: document.querySelector("#showGridInput"),
+  snapToGridInput: document.querySelector("#snapToGridInput"),
+  gridSizeInput: document.querySelector("#gridSizeInput"),
+  bpmInput: document.querySelector("#bpmInput"),
+  musicOffsetInput: document.querySelector("#musicOffsetInput"),
+  sectionLabelSelect: document.querySelector("#sectionLabelSelect"),
+  addSectionButton: document.querySelector("#addSectionButton"),
+  addFormationAtPlayheadButton: document.querySelector("#addFormationAtPlayheadButton"),
+  currentCountLabel: document.querySelector("#currentCountLabel"),
+  timelineActiveLabel: document.querySelector("#timelineActiveLabel"),
+  timelineNextLabel: document.querySelector("#timelineNextLabel"),
+  countTimelineViewport: document.querySelector("#countTimelineViewport"),
+  countTimelineTrack: document.querySelector("#countTimelineTrack"),
+  countTimelineGroups: document.querySelector("#countTimelineGroups"),
+  sectionMarkers: document.querySelector("#sectionMarkers"),
+  formationCueMarkers: document.querySelector("#formationCueMarkers"),
+  timelinePlayhead: document.querySelector("#timelinePlayhead"),
   projectFileInput: document.querySelector("#projectFileInput"),
   videoFileInput: document.querySelector("#videoFileInput")
 };
@@ -104,6 +142,11 @@ let lastTimeLabel = "";
 let activeDrag = null;
 let activeTransitionKey = null;
 let isAddingWaypoint = false;
+let templatePreview = null;
+let suppressNextMarkerClick = false;
+let timelineDuration = 60;
+let timelineCursorTime = 0;
+const history = new HistoryStack(120);
 
 function buildDefaultDancers(count) {
   return Array.from({ length: count }, (_, index) => ({
@@ -125,7 +168,11 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-function autoPositions(count) {
+function autoPositions(countOrIds) {
+  const dancerIds = Array.isArray(countOrIds)
+    ? countOrIds
+    : Array.from({ length: countOrIds }, (_, index) => index + 1);
+  const count = dancerIds.length;
   const columns = Math.min(4, Math.ceil(Math.sqrt(count)));
   const rows = Math.ceil(count / columns);
   const startX = 18;
@@ -139,7 +186,7 @@ function autoPositions(count) {
     const x = startX + (columns === 1 ? usableWidth / 2 : (usableWidth / (columns - 1)) * column);
     const y = startY + (rows === 1 ? usableHeight / 2 : (usableHeight / Math.max(rows - 1, 1)) * row);
     return {
-      dancerId: index + 1,
+      dancerId: dancerIds[index],
       x: Number(x.toFixed(2)),
       y: Number(y.toFixed(2))
     };
@@ -159,6 +206,7 @@ function createFormation(name, time, dancerCount) {
 function defaultProject() {
   nextFormationId = 1;
   return {
+    schemaVersion: SCHEMA_VERSION,
     title: "Untitled Choreography",
     mediaType: "none",
     youtubeUrl: "",
@@ -168,21 +216,34 @@ function defaultProject() {
     localVideoName: "",
     stageView: "2d",
     dancerCount: 12,
+    nextDancerId: 13,
     dancers: buildDefaultDancers(12),
     formations: [createFormation("Formation 1", 0, 12)],
     transitions: {},
+    bpm: 120,
+    musicStartOffset: 0,
+    sections: [],
+    editorSettings: {
+      showGrid: true,
+      snapToGrid: false,
+      gridSize: 5
+    },
     panelState: {
       playback: false,
       formation: false,
       cues: false
     },
     activeFormationId: 1,
-    selectedDancerId: 1
+    selectedDancerId: 1,
+    selectedDancerIds: [1]
   };
 }
 
-function normalizePositions(positions, dancerCount) {
-  const fallback = autoPositions(dancerCount);
+function normalizePositions(positions, dancerIds) {
+  const ids = Array.isArray(dancerIds)
+    ? dancerIds
+    : Array.from({ length: dancerIds }, (_, index) => index + 1);
+  const fallback = autoPositions(ids);
   const map = new Map((positions || []).map((position) => [Number(position.dancerId), position]));
   return fallback.map((position) => {
     const existing = map.get(position.dancerId);
@@ -194,7 +255,7 @@ function normalizePositions(positions, dancerCount) {
   });
 }
 
-function normalizeTransitions(transitions, formations, dancerCount) {
+function normalizeTransitions(transitions, formations, dancerIds) {
   if (!transitions || typeof transitions !== "object") {
     return {};
   }
@@ -211,16 +272,16 @@ function normalizeTransitions(transitions, formations, dancerCount) {
 
     const key = `${fromFormationId}:${toFormationId}`;
     const paths = {};
-    for (let dancerId = 1; dancerId <= dancerCount; dancerId += 1) {
+    dancerIds.forEach((dancerId) => {
       const rawPath = transition?.paths?.[dancerId];
       if (!Array.isArray(rawPath)) {
-        continue;
+        return;
       }
       paths[dancerId] = rawPath.map((point) => ({
         x: clamp(Number(point.x) || 0, 4, 96),
         y: clamp(Number(point.y) || 0, 6, 94)
       }));
-    }
+    });
 
     normalized[key] = { fromFormationId, toFormationId, paths };
   });
@@ -229,22 +290,39 @@ function normalizeTransitions(transitions, formations, dancerCount) {
 }
 
 function normalizeProject(data) {
-  const dancerCount = clamp(Number(data.dancerCount) || 12, 1, 30);
-  const dancers = Array.isArray(data.dancers) && data.dancers.length
-    ? data.dancers.slice(0, dancerCount).map((dancer, index) => ({
-      id: index + 1,
-      name: dancer.name || `Dancer ${index + 1}`,
+  const dancerCount = clamp(Math.round(Number(data.dancerCount) || data.dancers?.length || 12), 1, 30);
+  const rawDancers = Array.isArray(data.dancers) ? data.dancers.slice(0, dancerCount) : [];
+  const usedDancerIds = new Set();
+  let nextDancerId = 1;
+  const dancers = Array.from({ length: dancerCount }, (_, index) => {
+    const dancer = rawDancers[index] || {};
+    let id = Number(dancer.id);
+    if (!Number.isInteger(id) || id < 1 || usedDancerIds.has(id)) {
+      while (usedDancerIds.has(nextDancerId)) nextDancerId += 1;
+      id = nextDancerId;
+    }
+    usedDancerIds.add(id);
+    nextDancerId = Math.max(nextDancerId, id + 1);
+    return {
+      id,
+      name: dancer.name || `Dancer ${id}`,
       color: dancer.color || colorPalette[index % colorPalette.length],
       spriteFrame: normalizeSpriteFrame(dancer.spriteFrame, index)
-    }))
-    : buildDefaultDancers(dancerCount);
+    };
+  });
+  const dancerIds = dancers.map((dancer) => dancer.id);
+  const maximumDancerId = Math.max(...dancerIds, 0);
+  const savedNextDancerId = Number(data.nextDancerId);
+  const nextDancerIdValue = Number.isInteger(savedNextDancerId) && savedNextDancerId > maximumDancerId
+    ? savedNextDancerId
+    : maximumDancerId + 1;
 
   const formations = (data.formations || []).map((formation, index) => ({
     id: Number(formation.id) || index + 1,
     name: formation.name || `Formation ${index + 1}`,
     time: Math.max(0, Number(formation.time) || 0),
     notes: formation.notes || "",
-    positions: normalizePositions(formation.positions, dancerCount)
+    positions: normalizePositions(formation.positions, dancerIds)
   }));
 
   if (!formations.length) {
@@ -254,6 +332,7 @@ function normalizeProject(data) {
   nextFormationId = Math.max(...formations.map((formation) => formation.id), 0) + 1;
 
   const normalized = {
+    schemaVersion: SCHEMA_VERSION,
     title: data.title || "Untitled Choreography",
     mediaType: data.mediaType || (data.youtubeVideoId ? "youtube" : "none"),
     youtubeUrl: data.youtubeUrl || "",
@@ -263,9 +342,22 @@ function normalizeProject(data) {
     localVideoName: data.localVideoName || "",
     stageView: data.stageView === "3d" ? "3d" : "2d",
     dancerCount,
+    nextDancerId: nextDancerIdValue,
     dancers,
     formations,
-    transitions: normalizeTransitions(data.transitions, formations, dancerCount),
+    transitions: normalizeTransitions(data.transitions, formations, dancerIds),
+    bpm: clamp(Number(data.bpm) || 120, 20, 300),
+    musicStartOffset: Math.max(0, Number(data.musicStartOffset) || 0),
+    sections: Array.isArray(data.sections) ? data.sections.map((section, index) => ({
+      id: Number(section.id) || index + 1,
+      label: section.label || "Section",
+      time: Math.max(0, Number(section.time) || 0)
+    })) : [],
+    editorSettings: {
+      showGrid: data.editorSettings?.showGrid !== false,
+      snapToGrid: Boolean(data.editorSettings?.snapToGrid),
+      gridSize: clamp(Number(data.editorSettings?.gridSize) || 5, 2, 20)
+    },
     panelState: {
       playback: Boolean(data.panelState?.playback),
       formation: Boolean(data.panelState?.formation),
@@ -274,8 +366,19 @@ function normalizeProject(data) {
     activeFormationId: formations.some((formation) => formation.id === data.activeFormationId)
       ? data.activeFormationId
       : formations[0].id,
-    selectedDancerId: clamp(Number(data.selectedDancerId) || 1, 1, dancerCount)
+    selectedDancerId: dancerIds.includes(Number(data.selectedDancerId))
+      ? Number(data.selectedDancerId)
+      : dancerIds[0],
+    selectedDancerIds: []
   };
+
+  const savedSelection = Array.isArray(data.selectedDancerIds)
+    ? data.selectedDancerIds.map(Number).filter((id) => dancerIds.includes(id))
+    : [normalized.selectedDancerId];
+  normalized.selectedDancerIds = [...new Set(savedSelection.length ? savedSelection : [normalized.selectedDancerId])];
+  normalized.selectedDancerId = normalized.selectedDancerIds.includes(normalized.selectedDancerId)
+    ? normalized.selectedDancerId
+    : normalized.selectedDancerIds[0];
 
   if (normalized.mediaType === "file") {
     normalized.mediaType = "none";
@@ -288,7 +391,16 @@ function normalizeProject(data) {
 
 function loadState() {
   try {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
+    let saved = window.localStorage.getItem(STORAGE_KEY);
+    if (!saved) {
+      const legacyKey = Object.keys(window.localStorage)
+        .find((key) => key.endsWith("-dance-tool-project"));
+      if (legacyKey) {
+        saved = window.localStorage.getItem(legacyKey);
+        if (saved) window.localStorage.setItem(STORAGE_KEY, saved);
+        window.localStorage.removeItem(legacyKey);
+      }
+    }
     return saved ? normalizeProject(JSON.parse(saved)) : defaultProject();
   } catch {
     return defaultProject();
@@ -297,6 +409,63 @@ function loadState() {
 
 function saveState() {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+}
+
+function updateHistoryButtons() {
+  elements.undoButton.disabled = history.past.length === 0;
+  elements.redoButton.disabled = history.future.length === 0;
+}
+
+function commitHistory(before) {
+  if (JSON.stringify(before) === JSON.stringify(project)) {
+    return false;
+  }
+  history.record(before);
+  saveState();
+  updateHistoryButtons();
+  return true;
+}
+
+function restoreProjectSnapshot(snapshot) {
+  project = deepClone(snapshot);
+  nextFormationId = Math.max(...project.formations.map((formation) => formation.id), 0) + 1;
+  activeTransitionKey = null;
+  activeDrag = null;
+  isAddingWaypoint = false;
+  templatePreview = null;
+  saveState();
+  render();
+}
+
+function undo() {
+  const snapshot = history.undo(project);
+  if (snapshot) restoreProjectSnapshot(snapshot);
+  updateHistoryButtons();
+}
+
+function redo() {
+  const snapshot = history.redo(project);
+  if (snapshot) restoreProjectSnapshot(snapshot);
+  updateHistoryButtons();
+}
+
+function getSelectedDancerIds() {
+  const validIds = new Set(project.dancers.map((dancer) => dancer.id));
+  return (project.selectedDancerIds || [])
+    .map(Number)
+    .filter((id, index, ids) => validIds.has(id) && ids.indexOf(id) === index);
+}
+
+function setSelection(ids, primaryId = ids[0], shouldRender = true) {
+  const validIds = new Set(project.dancers.map((dancer) => dancer.id));
+  const selected = [...new Set(ids.map(Number).filter((id) => validIds.has(id)))];
+  project.selectedDancerIds = selected;
+  project.selectedDancerId = selected.includes(Number(primaryId))
+    ? Number(primaryId)
+    : (selected[0] || project.dancers[0].id);
+  saveState();
+  if (shouldRender) render();
+  else updateSelectedDancerUi();
 }
 
 function applyPanelState() {
@@ -331,6 +500,7 @@ function setActiveFormation(id, options = {}) {
   project.activeFormationId = id;
   activeTransitionKey = null;
   isAddingWaypoint = false;
+  templatePreview = null;
   if (!options.silent) {
     saveState();
   }
@@ -362,6 +532,7 @@ function openTransitionEditor(fromFormationId, toFormationId) {
   activeTransitionKey = getTransitionKey(fromFormationId, toFormationId);
   project.activeFormationId = transition.fromFormationId;
   isAddingWaypoint = false;
+  templatePreview = null;
   saveState();
   render();
 }
@@ -433,11 +604,12 @@ function getCurrentMediaTime() {
     return htmlVideo ? Number(htmlVideo.currentTime || 0) : 0;
   }
 
-  return 0;
+  return timelineCursorTime;
 }
 
 function seekCurrentMedia(seconds) {
   const target = Math.max(0, Number(seconds) || 0);
+  timelineCursorTime = target;
 
   if (project.mediaType === "youtube" && youtubePlayer && typeof youtubePlayer.seekTo === "function") {
     youtubePlayer.seekTo(target, true);
@@ -447,10 +619,15 @@ function seekCurrentMedia(seconds) {
     htmlVideo.currentTime = target;
   }
 
+  if (project.mediaType === "none") {
+    updateCountTimelinePlayhead(target);
+  }
+
   window.setTimeout(() => {
     const time = getCurrentMediaTime();
     syncFormationToTime(time, true);
     animateFormationToTime(time);
+    updateCountTimelinePlayhead(project.mediaType === "none" ? target : time);
   }, 150);
 }
 
@@ -628,6 +805,7 @@ function startPlaybackWatcher() {
     }
     syncFormationToTime(time, true);
     animateFormationToTime(time);
+    updateCountTimelinePlayhead(time);
     playbackTimer = window.requestAnimationFrame(updatePlayback);
   };
 
@@ -701,6 +879,7 @@ function loadYouTubeVideoById(videoId) {
     events: {
       onReady: () => {
         elements.videoStatus.textContent = "Ready";
+        renderCountTimeline();
       },
       onStateChange: handleYouTubeStateChange,
       onError: () => {
@@ -749,6 +928,7 @@ function wireHtmlVideoEvents(video) {
   video.addEventListener("loadedmetadata", () => {
     elements.videoStatus.textContent = "Ready";
     elements.currentTimeLabel.textContent = formatTime(video.currentTime);
+    renderCountTimeline();
   });
   video.addEventListener("timeupdate", () => {
     if (playbackTimer) {
@@ -757,6 +937,7 @@ function wireHtmlVideoEvents(video) {
     elements.currentTimeLabel.textContent = formatTime(video.currentTime);
     syncFormationToTime(video.currentTime, true);
     animateFormationToTime(video.currentTime);
+    updateCountTimelinePlayhead(video.currentTime);
   });
 }
 
@@ -793,18 +974,21 @@ function updateMediaSourceLabel() {
   elements.mediaSourceLabel.textContent = "No media selected";
 }
 
-function updateSelectedDancerUi(dancerId) {
+function updateSelectedDancerUi() {
+  const selectedIds = new Set(getSelectedDancerIds());
   elements.stageSurface.querySelectorAll(".dancer-marker, .transition-node, .path-waypoint").forEach((node) => {
-    node.classList.toggle("selected", Number(node.dataset.dancerId) === dancerId);
+    node.classList.toggle("selected", selectedIds.has(Number(node.dataset.dancerId)));
   });
 
   elements.stageSurface.querySelectorAll(".transition-lines polyline").forEach((node) => {
-    node.classList.toggle("selected", Number(node.dataset.pathDancerId) === dancerId);
+    node.classList.toggle("selected", selectedIds.has(Number(node.dataset.pathDancerId)));
   });
 
   elements.dancerLegend.querySelectorAll(".legend-row").forEach((node) => {
-    node.classList.toggle("active", Number(node.dataset.dancerId) === dancerId);
+    node.classList.toggle("active", selectedIds.has(Number(node.dataset.dancerId)));
   });
+  const count = selectedIds.size;
+  elements.selectionCountLabel.textContent = `${count} ${count === 1 ? "dancer" : "dancers"} selected`;
 }
 
 function projectStagePosition(position) {
@@ -877,10 +1061,16 @@ function updateTransitionPathElement(transition, dancerId) {
   line.setAttribute("points", points);
 }
 
-function selectDancer(dancerId) {
-  project.selectedDancerId = dancerId;
-  saveState();
-  render();
+function selectDancer(dancerId, options = {}) {
+  const selected = getSelectedDancerIds();
+  if (options.toggle) {
+    const next = selected.includes(dancerId)
+      ? selected.filter((id) => id !== dancerId)
+      : [...selected, dancerId];
+    setSelection(next, dancerId);
+    return;
+  }
+  setSelection([dancerId], dancerId);
 }
 
 function beginWaypointDrag(event) {
@@ -895,14 +1085,18 @@ function beginWaypointDrag(event) {
     return;
   }
 
-  project.selectedDancerId = dancerId;
+  setSelection([dancerId], dancerId, false);
+  const before = deepClone(project);
+  let moved = false;
   waypoint.classList.add("dragging");
   waypoint.setPointerCapture(event.pointerId);
 
   const move = (moveEvent) => {
-    const nextPoint = unprojectStagePointer(moveEvent.clientX, moveEvent.clientY);
+    let nextPoint = unprojectStagePointer(moveEvent.clientX, moveEvent.clientY);
+    if (project.editorSettings.snapToGrid) nextPoint = snapPosition(nextPoint, project.editorSettings.gridSize);
     point.x = Number(nextPoint.x.toFixed(2));
     point.y = Number(nextPoint.y.toFixed(2));
+    moved = true;
     positionStageElement(waypoint, point);
     updateTransitionPathElement(transition, dancerId);
   };
@@ -912,7 +1106,8 @@ function beginWaypointDrag(event) {
     window.removeEventListener("pointerup", stop);
     window.removeEventListener("pointercancel", stop);
     waypoint.classList.remove("dragging");
-    saveState();
+    if (moved) commitHistory(before);
+    else saveState();
     render();
   };
 
@@ -941,15 +1136,18 @@ function beginTransitionEndpointDrag(event) {
     return;
   }
 
-  project.selectedDancerId = dancerId;
-  updateSelectedDancerUi(dancerId);
+  setSelection([dancerId], dancerId, false);
+  const before = deepClone(project);
+  let moved = false;
   node.classList.add("dragging");
   node.setPointerCapture(event.pointerId);
 
   const move = (moveEvent) => {
-    const nextPosition = unprojectStagePointer(moveEvent.clientX, moveEvent.clientY);
+    let nextPosition = unprojectStagePointer(moveEvent.clientX, moveEvent.clientY);
+    if (project.editorSettings.snapToGrid) nextPosition = snapPosition(nextPosition, project.editorSettings.gridSize);
     position.x = Number(nextPosition.x.toFixed(2));
     position.y = Number(nextPosition.y.toFixed(2));
+    moved = true;
     positionStageElement(node, position);
     updateTransitionPathElement(transition, dancerId);
   };
@@ -959,7 +1157,8 @@ function beginTransitionEndpointDrag(event) {
     window.removeEventListener("pointerup", stop);
     window.removeEventListener("pointercancel", stop);
     node.classList.remove("dragging");
-    saveState();
+    if (moved) commitHistory(before);
+    else saveState();
     render();
   };
 
@@ -988,6 +1187,7 @@ function renderTransitionStage(transition) {
   svg.setAttribute("preserveAspectRatio", "none");
   elements.stageSurface.append(svg);
 
+  const selectedIds = new Set(getSelectedDancerIds());
   project.dancers.forEach((dancer) => {
     const start = fromFormation.positions.find((position) => position.dancerId === dancer.id);
     const end = toFormation.positions.find((position) => position.dancerId === dancer.id);
@@ -997,13 +1197,13 @@ function renderTransitionStage(transition) {
 
     const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
     line.dataset.pathDancerId = String(dancer.id);
-    line.classList.toggle("selected", dancer.id === project.selectedDancerId);
+    line.classList.toggle("selected", selectedIds.has(dancer.id));
     line.style.setProperty("--path-color", dancer.color);
     svg.append(line);
 
     const startNode = document.createElement("button");
     startNode.type = "button";
-    startNode.className = `transition-node start-node${dancer.id === project.selectedDancerId ? " selected" : ""}`;
+    startNode.className = `transition-node start-node${selectedIds.has(dancer.id) ? " selected" : ""}`;
     startNode.dataset.dancerId = String(dancer.id);
     startNode.dataset.endpoint = "start";
     startNode.style.background = dancer.color;
@@ -1011,12 +1211,12 @@ function renderTransitionStage(transition) {
     startNode.title = `${dancer.name} start`;
     positionStageElement(startNode, start);
     startNode.addEventListener("pointerdown", beginTransitionEndpointDrag);
-    startNode.addEventListener("click", () => selectDancer(dancer.id));
+    startNode.addEventListener("click", (event) => selectDancer(dancer.id, { toggle: event.shiftKey }));
     elements.stageSurface.append(startNode);
 
     const endNode = document.createElement("button");
     endNode.type = "button";
-    endNode.className = `transition-node end-node${dancer.id === project.selectedDancerId ? " selected" : ""}`;
+    endNode.className = `transition-node end-node${selectedIds.has(dancer.id) ? " selected" : ""}`;
     endNode.dataset.dancerId = String(dancer.id);
     endNode.dataset.endpoint = "end";
     endNode.style.setProperty("--dancer-color", dancer.color);
@@ -1024,13 +1224,13 @@ function renderTransitionStage(transition) {
     endNode.title = `${dancer.name} destination`;
     positionStageElement(endNode, end);
     endNode.addEventListener("pointerdown", beginTransitionEndpointDrag);
-    endNode.addEventListener("click", () => selectDancer(dancer.id));
+    endNode.addEventListener("click", (event) => selectDancer(dancer.id, { toggle: event.shiftKey }));
     elements.stageSurface.append(endNode);
 
     (transition.paths[dancer.id] || []).forEach((point, index) => {
       const waypoint = document.createElement("button");
       waypoint.type = "button";
-      waypoint.className = `path-waypoint${dancer.id === project.selectedDancerId ? " selected" : ""}`;
+      waypoint.className = `path-waypoint${selectedIds.has(dancer.id) ? " selected" : ""}`;
       waypoint.dataset.dancerId = String(dancer.id);
       waypoint.dataset.waypointIndex = String(index);
       waypoint.style.setProperty("--dancer-color", dancer.color);
@@ -1038,7 +1238,7 @@ function renderTransitionStage(transition) {
       waypoint.title = `${dancer.name} waypoint ${index + 1}`;
       positionStageElement(waypoint, point);
       waypoint.addEventListener("pointerdown", beginWaypointDrag);
-      waypoint.addEventListener("click", () => selectDancer(dancer.id));
+      waypoint.addEventListener("click", (event) => selectDancer(dancer.id, { toggle: event.shiftKey }));
       elements.stageSurface.append(waypoint);
     });
 
@@ -1059,14 +1259,29 @@ function renderStage(formation) {
   elements.stageSurface.classList.remove("transition-mode");
   elements.stageSurface.classList.toggle("view-3d", is3d);
   elements.stageSurface.classList.toggle("view-2d", !is3d);
+  elements.stageSurface.classList.toggle("grid-hidden", !project.editorSettings.showGrid);
+  elements.stageSurface.style.setProperty("--editor-grid-size", `${project.editorSettings.gridSize}%`);
   elements.stageSurface.innerHTML = '<div class="stage-caption">Audience</div><div class="upstage-caption">Upstage</div>';
 
+  if (templatePreview) {
+    templatePreview.forEach((position) => {
+      const marker = document.createElement("span");
+      const projected = projectStagePosition(position);
+      marker.className = "template-preview-marker";
+      marker.style.left = `${projected.x}%`;
+      marker.style.top = `${projected.y}%`;
+      marker.textContent = String(position.dancerId);
+      elements.stageSurface.append(marker);
+    });
+  }
+
+  const selectedIds = new Set(getSelectedDancerIds());
   formation.positions.forEach((position) => {
     const dancer = project.dancers.find((item) => item.id === position.dancerId);
     const projected = projectStagePosition(position);
     const marker = document.createElement("button");
     marker.type = "button";
-    marker.className = `dancer-marker${project.selectedDancerId === dancer.id ? " selected" : ""}`;
+    marker.className = `dancer-marker${selectedIds.has(dancer.id) ? " selected" : ""}`;
     marker.dataset.dancerId = String(dancer.id);
     marker.style.left = `${projected.x}%`;
     marker.style.top = `${projected.y}%`;
@@ -1089,13 +1304,12 @@ function renderStage(formation) {
     }
     marker.title = dancer.name;
     marker.addEventListener("pointerdown", beginMarkerDrag);
-    marker.addEventListener("click", () => {
-      if (activeDrag?.dancerId === dancer.id && activeDrag.dragMoved) {
+    marker.addEventListener("click", (event) => {
+      if (suppressNextMarkerClick) {
+        suppressNextMarkerClick = false;
         return;
       }
-      project.selectedDancerId = dancer.id;
-      saveState();
-      render();
+      selectDancer(dancer.id, { toggle: event.shiftKey });
     });
     elements.stageSurface.append(marker);
     renderedMarkers.set(dancer.id, marker);
@@ -1107,7 +1321,7 @@ function renderLegend() {
 
   project.dancers.forEach((dancer) => {
     const row = document.createElement("div");
-    row.className = `legend-row${project.selectedDancerId === dancer.id ? " active" : ""}`;
+    row.className = `legend-row${getSelectedDancerIds().includes(dancer.id) ? " active" : ""}`;
     row.dataset.dancerId = String(dancer.id);
 
     const swatch = document.createElement("div");
@@ -1168,16 +1382,17 @@ function renderLegend() {
       poseSelect.addEventListener("click", (event) => event.stopPropagation());
       poseSelect.addEventListener("change", (event) => {
         event.stopPropagation();
+        const before = deepClone(project);
         dancer.spriteFrame = Number(event.target.value);
-        saveState();
+        commitHistory(before);
         render();
       });
       poseControl.append(poseSelect);
       row.append(poseControl);
     }
 
-    row.addEventListener("click", () => {
-      selectDancer(dancer.id);
+    row.addEventListener("click", (event) => {
+      selectDancer(dancer.id, { toggle: event.shiftKey });
     });
     elements.dancerLegend.append(row);
   });
@@ -1251,6 +1466,11 @@ function render() {
   elements.formationNameInput.value = activeFormation.name;
   elements.formationTimeInput.value = activeFormation.time.toFixed(1);
   elements.formationNotesInput.value = activeFormation.notes;
+  elements.bpmInput.value = project.bpm;
+  elements.musicOffsetInput.value = project.musicStartOffset;
+  elements.showGridInput.checked = project.editorSettings.showGrid;
+  elements.snapToGridInput.checked = project.editorSettings.snapToGrid;
+  elements.gridSizeInput.value = project.editorSettings.gridSize;
   elements.activeFormationLabel.textContent = activeTransition
     ? "Transition paths"
     : activeFormation.name;
@@ -1279,51 +1499,80 @@ function render() {
   renderStage(activeFormation);
   renderLegend();
   renderTimeline(activeFormation.id);
+  renderCountTimeline();
+  updateSelectedDancerUi();
+  updateHistoryButtons();
 }
 
 function beginMarkerDrag(event) {
+  if (event.button !== 0) return;
+  event.stopPropagation();
   const dancerId = Number(event.currentTarget.dataset.dancerId);
   const marker = event.currentTarget;
   const activeFormation = getActiveFormation();
-  const position = activeFormation.positions.find((item) => item.dancerId === dancerId);
-
-  project.selectedDancerId = dancerId;
-  updateSelectedDancerUi(dancerId);
-  marker.style.transform = "";
+  let selectedIds = getSelectedDancerIds();
+  const selectionChanged = !selectedIds.includes(dancerId);
+  if (!selectedIds.includes(dancerId)) {
+    selectedIds = event.shiftKey ? [...selectedIds, dancerId] : [dancerId];
+  }
+  setSelection(selectedIds, dancerId, false);
+  const selectedSet = new Set(selectedIds);
+  const startPointer = unprojectStagePointer(event.clientX, event.clientY);
+  const startPositions = activeFormation.positions
+    .filter((position) => selectedSet.has(position.dancerId))
+    .map((position) => ({ ...position }));
+  const before = deepClone(project);
 
   activeDrag = {
     dancerId,
     marker,
-    position,
     pointerId: event.pointerId,
     dragMoved: false
   };
 
-  activeDrag.marker.classList.add("dragging");
+  selectedIds.forEach((id) => renderedMarkers.get(id)?.classList.add("dragging"));
   activeDrag.marker.setPointerCapture(event.pointerId);
 
   const move = (moveEvent) => {
     const nextPosition = unprojectStagePointer(moveEvent.clientX, moveEvent.clientY);
-    position.x = Number(nextPosition.x.toFixed(2));
-    position.y = Number(nextPosition.y.toFixed(2));
-    const projected = projectStagePosition(position);
-    activeDrag.dragMoved = true;
-    activeDrag.marker.style.left = `${projected.x}%`;
-    activeDrag.marker.style.top = `${projected.y}%`;
-    activeDrag.marker.style.setProperty("--marker-scale", projected.scale);
-    activeDrag.marker.style.zIndex = String(Math.round(position.y) + 2);
-    activeDrag.marker.title = project.dancers[dancerId - 1].name;
+    let deltaX = nextPosition.x - startPointer.x;
+    let deltaY = nextPosition.y - startPointer.y;
+    deltaX = clamp(deltaX, 4 - Math.min(...startPositions.map((position) => position.x)), 96 - Math.max(...startPositions.map((position) => position.x)));
+    deltaY = clamp(deltaY, 6 - Math.min(...startPositions.map((position) => position.y)), 94 - Math.max(...startPositions.map((position) => position.y)));
+    startPositions.forEach((start) => {
+      const position = activeFormation.positions.find((item) => item.dancerId === start.dancerId);
+      let updated = { ...position, x: start.x + deltaX, y: start.y + deltaY };
+      if (project.editorSettings.snapToGrid) {
+        updated = snapPosition(updated, project.editorSettings.gridSize);
+      }
+      position.x = Number(updated.x.toFixed(2));
+      position.y = Number(updated.y.toFixed(2));
+      const projected = projectStagePosition(position);
+      const node = renderedMarkers.get(start.dancerId);
+      if (node) {
+        node.style.transform = "";
+        node.style.left = `${projected.x}%`;
+        node.style.top = `${projected.y}%`;
+        node.style.setProperty("--marker-scale", projected.scale);
+        node.style.zIndex = String(Math.round(position.y) + 2);
+      }
+    });
+    activeDrag.dragMoved = Math.hypot(deltaX, deltaY) > 0.15;
   };
 
   const stop = () => {
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", stop);
     window.removeEventListener("pointercancel", stop);
-    if (activeDrag?.marker) {
-      activeDrag.marker.classList.remove("dragging");
-    }
-    saveState();
     const shouldRerender = Boolean(activeDrag?.dragMoved);
+    selectedIds.forEach((id) => renderedMarkers.get(id)?.classList.remove("dragging"));
+    if (shouldRerender) {
+      commitHistory(before);
+      suppressNextMarkerClick = true;
+    } else {
+      saveState();
+      suppressNextMarkerClick = selectionChanged;
+    }
     activeDrag = null;
     if (shouldRerender) {
       render();
@@ -1336,22 +1585,39 @@ function beginMarkerDrag(event) {
 }
 
 function resizeDancers(newCount) {
-  const count = clamp(newCount, 1, 30);
-  const existingDancers = project.dancers;
+  const count = clamp(Math.round(Number(newCount) || 1), 1, 30);
+  if (count === project.dancerCount) return;
+  const before = deepClone(project);
+  const existingDancers = [...project.dancers];
+  const nextDancerId = project.nextDancerId;
+  const addedDancers = Array.from({ length: Math.max(0, count - existingDancers.length) }, (_, index) => ({
+    id: nextDancerId + index,
+    name: `Dancer ${nextDancerId + index}`,
+    color: colorPalette[(existingDancers.length + index) % colorPalette.length],
+    spriteFrame: spritePoseOptions[(existingDancers.length + index) % spritePoseOptions.length].frame
+  }));
   project.dancerCount = count;
-  project.dancers = Array.from({ length: count }, (_, index) => (
-    existingDancers[index] || buildDefaultDancers(count)[index]
-  ));
+  project.dancers = [...existingDancers, ...addedDancers].slice(0, count);
+  project.nextDancerId += addedDancers.length;
+  const dancerIds = project.dancers.map((dancer) => dancer.id);
   project.formations = project.formations.map((formation) => ({
     ...formation,
-    positions: normalizePositions(formation.positions, count)
+    positions: normalizePositions(formation.positions, dancerIds)
   }));
-  project.selectedDancerId = clamp(project.selectedDancerId, 1, count);
-  saveState();
+  Object.values(project.transitions).forEach((transition) => {
+    Object.keys(transition.paths).forEach((id) => {
+      if (!dancerIds.includes(Number(id))) delete transition.paths[id];
+    });
+  });
+  const retainedSelection = getSelectedDancerIds();
+  project.selectedDancerIds = retainedSelection.length ? retainedSelection : [dancerIds[0]];
+  project.selectedDancerId = project.selectedDancerIds[0];
+  commitHistory(before);
   render();
 }
 
 function addFormation() {
+  const before = deepClone(project);
   const current = getActiveFormation();
   const formation = {
     id: nextFormationId++,
@@ -1363,10 +1629,12 @@ function addFormation() {
 
   project.formations.push(formation);
   setActiveFormation(formation.id);
-  saveState();
+  commitHistory(before);
+  render();
 }
 
 function duplicateFormation() {
+  const before = deepClone(project);
   const current = getActiveFormation();
   const formation = {
     id: nextFormationId++,
@@ -1378,7 +1646,8 @@ function duplicateFormation() {
 
   project.formations.push(formation);
   setActiveFormation(formation.id);
-  saveState();
+  commitHistory(before);
+  render();
 }
 
 function deleteFormation() {
@@ -1386,6 +1655,7 @@ function deleteFormation() {
     return;
   }
 
+  const before = deepClone(project);
   const index = project.formations.findIndex((formation) => formation.id === project.activeFormationId);
   const deletedFormationId = project.activeFormationId;
   project.formations.splice(index, 1);
@@ -1400,24 +1670,254 @@ function deleteFormation() {
   });
   const fallback = project.formations[Math.max(0, index - 1)];
   setActiveFormation(fallback.id);
-  saveState();
+  commitHistory(before);
+  render();
 }
 
 function sortFormations() {
+  const before = deepClone(project);
   project.formations.sort((a, b) => a.time - b.time);
-  saveState();
+  commitHistory(before);
   render();
 }
 
 function autoArrangeActiveFormation() {
-  getActiveFormation().positions = autoPositions(project.dancerCount);
-  saveState();
+  const before = deepClone(project);
+  getActiveFormation().positions = autoPositions(project.dancers.map((dancer) => dancer.id));
+  commitHistory(before);
   render();
 }
 
 function setCurrentFormationTimeFromMedia() {
+  const before = deepClone(project);
   getActiveFormation().time = Number(getCurrentMediaTime().toFixed(1));
-  saveState();
+  commitHistory(before);
+  render();
+}
+
+function deleteSelectedDancers() {
+  const selectedIds = getSelectedDancerIds();
+  if (!selectedIds.length || selectedIds.length >= project.dancers.length) {
+    window.alert("A project must keep at least one dancer.");
+    return;
+  }
+  if (!window.confirm(`Delete ${selectedIds.length} selected ${selectedIds.length === 1 ? "dancer" : "dancers"} from every formation?`)) return;
+  const before = deepClone(project);
+  const removed = new Set(selectedIds);
+  project.dancers = project.dancers.filter((dancer) => !removed.has(dancer.id));
+  project.dancerCount = project.dancers.length;
+  project.formations.forEach((formation) => {
+    formation.positions = formation.positions.filter((position) => !removed.has(position.dancerId));
+  });
+  Object.values(project.transitions).forEach((transition) => {
+    selectedIds.forEach((id) => delete transition.paths[id]);
+  });
+  project.selectedDancerId = project.dancers[0].id;
+  project.selectedDancerIds = [project.selectedDancerId];
+  commitHistory(before);
+  render();
+}
+
+function previewSelectedTemplate() {
+  const selectedIds = getSelectedDancerIds();
+  if (!selectedIds.length) return;
+  templatePreview = createTemplatePositions(elements.formationTemplateSelect.value, selectedIds);
+  renderStage(getActiveFormation());
+}
+
+function applySelectedTemplate() {
+  const selectedIds = getSelectedDancerIds();
+  if (!selectedIds.length) return;
+  const before = deepClone(project);
+  getActiveFormation().positions = applyTemplate(
+    getActiveFormation().positions,
+    selectedIds,
+    elements.formationTemplateSelect.value
+  );
+  templatePreview = null;
+  commitHistory(before);
+  render();
+}
+
+function alignSelectedDancers(mode) {
+  const selectedIds = getSelectedDancerIds();
+  if (selectedIds.length < 2) return;
+  const before = deepClone(project);
+  getActiveFormation().positions = alignPositions(getActiveFormation().positions, selectedIds, mode);
+  commitHistory(before);
+  render();
+}
+
+function beginSelectionRectangle(event) {
+  if (
+    event.button !== 0
+    || project.stageView !== "2d"
+    || getActiveTransition()
+    || isAddingWaypoint
+    || event.target.closest("button, .template-preview-marker")
+  ) return;
+  event.preventDefault();
+  const bounds = elements.stageSurface.getBoundingClientRect();
+  const startX = clamp(event.clientX - bounds.left, 0, bounds.width);
+  const startY = clamp(event.clientY - bounds.top, 0, bounds.height);
+  const baseline = event.shiftKey ? getSelectedDancerIds() : [];
+  const rectangle = document.createElement("div");
+  rectangle.className = "selection-rectangle";
+  elements.stageSurface.append(rectangle);
+
+  const move = (moveEvent) => {
+    const endX = clamp(moveEvent.clientX - bounds.left, 0, bounds.width);
+    const endY = clamp(moveEvent.clientY - bounds.top, 0, bounds.height);
+    const left = Math.min(startX, endX);
+    const top = Math.min(startY, endY);
+    const right = Math.max(startX, endX);
+    const bottom = Math.max(startY, endY);
+    rectangle.style.left = `${left}px`;
+    rectangle.style.top = `${top}px`;
+    rectangle.style.width = `${right - left}px`;
+    rectangle.style.height = `${bottom - top}px`;
+    const enclosed = [...renderedMarkers.entries()]
+      .filter(([, marker]) => {
+        const markerBounds = marker.getBoundingClientRect();
+        const x = markerBounds.left + markerBounds.width / 2 - bounds.left;
+        const y = markerBounds.top + markerBounds.height / 2 - bounds.top;
+        return x >= left && x <= right && y >= top && y <= bottom;
+      })
+      .map(([id]) => id);
+    setSelection(
+      [...baseline, ...enclosed],
+      enclosed[enclosed.length - 1] || baseline[baseline.length - 1],
+      false
+    );
+  };
+  const stop = () => {
+    window.removeEventListener("pointermove", move);
+    rectangle.remove();
+    saveState();
+    render();
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", stop, { once: true });
+  window.addEventListener("pointercancel", stop, { once: true });
+}
+
+function getMediaDuration() {
+  const mediaDuration = project.mediaType === "file"
+    ? Number(htmlVideo?.duration)
+    : Number(youtubePlayer?.getDuration?.());
+  const lastCue = Math.max(...project.formations.map((formation) => formation.time), 0);
+  const lastSection = Math.max(...project.sections.map((section) => section.time), 0);
+  const musicalTail = secondsPerBeat(project.bpm) * 8;
+  return Math.max(
+    Number.isFinite(mediaDuration) ? mediaDuration : 0,
+    lastCue + musicalTail,
+    lastSection + musicalTail,
+    project.musicStartOffset + musicalTail,
+    60
+  );
+}
+
+function updateCountTimelinePlayhead(time) {
+  const safeTime = clamp(Number(time) || 0, 0, timelineDuration);
+  elements.timelinePlayhead.style.left = `${(safeTime / timelineDuration) * 100}%`;
+  elements.currentCountLabel.textContent = countInfo(safeTime, project.bpm, project.musicStartOffset).label;
+  const segment = getPlaybackSegment(safeTime);
+  elements.timelineActiveLabel.textContent = `Active: ${segment?.fromFormation?.name || "none"}`;
+  elements.timelineNextLabel.textContent = `Next: ${segment?.toFormation?.name || "none"}`;
+}
+
+function beginCueDrag(event, formation) {
+  if (event.button !== 0) return;
+  event.stopPropagation();
+  const before = deepClone(project);
+  const bounds = elements.countTimelineTrack.getBoundingClientRect();
+  let moved = false;
+  const move = (moveEvent) => {
+    const ratio = clamp((moveEvent.clientX - bounds.left) / bounds.width, 0, 1);
+    formation.time = Number((ratio * timelineDuration).toFixed(2));
+    moved = true;
+    renderCountTimeline();
+  };
+  const stop = () => {
+    window.removeEventListener("pointermove", move);
+    if (moved) {
+      project.activeFormationId = formation.id;
+      commitHistory(before);
+      seekCurrentMedia(formation.time);
+      render();
+    }
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", stop, { once: true });
+  window.addEventListener("pointercancel", stop, { once: true });
+}
+
+function renderCountTimeline() {
+  timelineDuration = getMediaDuration();
+  const beatDuration = secondsPerBeat(project.bpm);
+  const beats = Math.max(8, Math.ceil((timelineDuration - project.musicStartOffset) / beatDuration));
+  const trackWidth = Math.max(elements.countTimelineViewport.clientWidth || 720, beats * 26);
+  elements.countTimelineTrack.style.width = `${trackWidth}px`;
+  elements.countTimelineGroups.innerHTML = "";
+  elements.sectionMarkers.innerHTML = "";
+  elements.formationCueMarkers.innerHTML = "";
+
+  for (let beat = 0; beat < beats; beat += 1) {
+    const cell = document.createElement("span");
+    cell.className = `count-beat${beat % 8 === 0 ? " group-start" : ""}`;
+    cell.style.left = `${((project.musicStartOffset + beat * beatDuration) / timelineDuration) * 100}%`;
+    cell.style.width = `${(beatDuration / timelineDuration) * 100}%`;
+    cell.textContent = String((beat % 8) + 1);
+    cell.title = `8-count ${Math.floor(beat / 8) + 1}, count ${(beat % 8) + 1}`;
+    elements.countTimelineGroups.append(cell);
+  }
+
+  project.sections.forEach((section) => {
+    const marker = document.createElement("button");
+    marker.type = "button";
+    marker.className = "section-marker";
+    marker.style.left = `${(section.time / timelineDuration) * 100}%`;
+    marker.textContent = section.label;
+    marker.title = `${section.label} at ${formatTime(section.time)}`;
+    marker.addEventListener("click", (event) => {
+      event.stopPropagation();
+      seekCurrentMedia(section.time);
+    });
+    elements.sectionMarkers.append(marker);
+  });
+
+  getOrderedFormations().forEach((formation) => {
+    const marker = document.createElement("button");
+    marker.type = "button";
+    marker.className = `formation-cue-marker${formation.id === project.activeFormationId ? " active" : ""}`;
+    marker.style.left = `${(formation.time / timelineDuration) * 100}%`;
+    marker.textContent = formation.name;
+    marker.title = `${formation.name} · ${formatTime(formation.time)} · drag to retime`;
+    marker.addEventListener("pointerdown", (event) => beginCueDrag(event, formation));
+    marker.addEventListener("click", (event) => {
+      event.stopPropagation();
+      project.activeFormationId = formation.id;
+      seekCurrentMedia(formation.time);
+      render();
+    });
+    elements.formationCueMarkers.append(marker);
+  });
+  updateCountTimelinePlayhead(getCurrentMediaTime());
+}
+
+function addFormationAtPlayhead() {
+  const before = deepClone(project);
+  const current = getActiveFormation();
+  const formation = {
+    id: nextFormationId++,
+    name: `Formation ${project.formations.length + 1}`,
+    time: Number(getCurrentMediaTime().toFixed(2)),
+    notes: "",
+    positions: current.positions.map((position) => ({ ...position }))
+  };
+  project.formations.push(formation);
+  project.activeFormationId = formation.id;
+  commitHistory(before);
   render();
 }
 
@@ -1427,6 +1927,7 @@ async function saveProjectToDisk() {
     portableProject.mediaType = "none";
     portableProject.localVideoPath = "";
     portableProject.localVideoUrl = "";
+    portableProject.localVideoName = "";
   }
 
   if (!window.desktopApi?.saveProject) {
@@ -1456,6 +1957,8 @@ async function saveProjectToDisk() {
 
 function applyLoadedProject(data) {
   project = normalizeProject(data);
+  history.clear();
+  timelineCursorTime = 0;
   saveState();
   render();
 
@@ -1487,6 +1990,8 @@ async function loadProjectFromDisk() {
 
 function createFreshProject() {
   project = defaultProject();
+  history.clear();
+  timelineCursorTime = 0;
   saveState();
   render();
   renderPlayerPlaceholder("Paste a YouTube link or open a local MP4 rehearsal video.");
@@ -1535,7 +2040,23 @@ document.addEventListener("keydown", (event) => {
     setFileMenuOpen(false);
     elements.fileMenuButton.focus();
   }
+  const isTyping = event.target.matches?.("input, textarea, select, [contenteditable='true']");
+  const modifier = event.metaKey || event.ctrlKey;
+  if (!isTyping && modifier && event.key.toLowerCase() === "z") {
+    event.preventDefault();
+    if (event.shiftKey) redo();
+    else undo();
+  } else if (!isTyping && event.ctrlKey && event.key.toLowerCase() === "y") {
+    event.preventDefault();
+    redo();
+  } else if (!isTyping && (event.key === "Delete" || event.key === "Backspace")) {
+    event.preventDefault();
+    deleteSelectedDancers();
+  }
 });
+
+elements.undoButton.addEventListener("click", undo);
+elements.redoButton.addEventListener("click", redo);
 
 elements.youtubeUrlInput.addEventListener("change", (event) => {
   project.youtubeUrl = event.target.value.trim();
@@ -1605,8 +2126,9 @@ elements.formationNameInput.addEventListener("input", (event) => {
 });
 
 elements.formationTimeInput.addEventListener("change", (event) => {
+  const before = deepClone(project);
   getActiveFormation().time = Math.max(0, Number(event.target.value) || 0);
-  saveState();
+  commitHistory(before);
   render();
 });
 
@@ -1628,12 +2150,14 @@ elements.clearPathButton.addEventListener("click", () => {
   if (!transition) {
     return;
   }
+  const before = deepClone(project);
   delete transition.paths[project.selectedDancerId];
   isAddingWaypoint = false;
-  saveState();
+  commitHistory(before);
   render();
 });
 elements.finishTransitionButton.addEventListener("click", finishTransitionEditor);
+elements.stageSurface.addEventListener("pointerdown", beginSelectionRectangle);
 elements.stageSurface.addEventListener("pointerdown", (event) => {
   const transition = getActiveTransition();
   if (
@@ -1646,17 +2170,86 @@ elements.stageSurface.addEventListener("pointerdown", (event) => {
   }
 
   const dancerId = project.selectedDancerId;
+  const before = deepClone(project);
   const point = unprojectStagePointer(event.clientX, event.clientY);
+  const snappedPoint = project.editorSettings.snapToGrid
+    ? snapPosition(point, project.editorSettings.gridSize)
+    : point;
   if (!transition.paths[dancerId]) {
     transition.paths[dancerId] = [];
   }
   transition.paths[dancerId].push({
-    x: Number(point.x.toFixed(2)),
-    y: Number(point.y.toFixed(2))
+    x: Number(snappedPoint.x.toFixed(2)),
+    y: Number(snappedPoint.y.toFixed(2))
   });
   isAddingWaypoint = false;
+  commitHistory(before);
+  render();
+});
+
+elements.selectAllDancersButton.addEventListener("click", () => {
+  setSelection(project.dancers.map((dancer) => dancer.id), project.selectedDancerId);
+});
+elements.clearSelectionButton.addEventListener("click", () => {
+  setSelection([], project.selectedDancerId);
+});
+elements.deleteSelectedDancersButton.addEventListener("click", deleteSelectedDancers);
+elements.previewTemplateButton.addEventListener("click", previewSelectedTemplate);
+elements.applyTemplateButton.addEventListener("click", applySelectedTemplate);
+elements.formationTemplateSelect.addEventListener("change", () => {
+  if (templatePreview) previewSelectedTemplate();
+});
+elements.alignmentButtons.forEach((button) => {
+  button.addEventListener("click", () => alignSelectedDancers(button.dataset.align));
+});
+elements.showGridInput.addEventListener("change", (event) => {
+  project.editorSettings.showGrid = event.target.checked;
+  saveState();
+  renderStage(getActiveFormation());
+});
+elements.snapToGridInput.addEventListener("change", (event) => {
+  project.editorSettings.snapToGrid = event.target.checked;
+  saveState();
+});
+elements.gridSizeInput.addEventListener("change", (event) => {
+  project.editorSettings.gridSize = clamp(Number(event.target.value) || 5, 2, 20);
   saveState();
   render();
+});
+
+elements.bpmInput.addEventListener("change", (event) => {
+  const before = deepClone(project);
+  project.bpm = clamp(Number(event.target.value) || 120, 20, 300);
+  commitHistory(before);
+  render();
+});
+elements.musicOffsetInput.addEventListener("change", (event) => {
+  const before = deepClone(project);
+  project.musicStartOffset = Math.max(0, Number(event.target.value) || 0);
+  commitHistory(before);
+  render();
+});
+elements.addSectionButton.addEventListener("click", () => {
+  const before = deepClone(project);
+  project.sections.push({
+    id: Math.max(...project.sections.map((section) => section.id), 0) + 1,
+    label: elements.sectionLabelSelect.value,
+    time: Number(getCurrentMediaTime().toFixed(2))
+  });
+  commitHistory(before);
+  render();
+});
+elements.addFormationAtPlayheadButton.addEventListener("click", addFormationAtPlayhead);
+elements.countTimelineTrack.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0 || event.target.closest("button")) return;
+  const bounds = elements.countTimelineTrack.getBoundingClientRect();
+  const scrub = (scrubEvent) => {
+    const ratio = clamp((scrubEvent.clientX - bounds.left) / bounds.width, 0, 1);
+    seekCurrentMedia(ratio * timelineDuration);
+  };
+  scrub(event);
+  window.addEventListener("pointermove", scrub);
+  window.addEventListener("pointerup", () => window.removeEventListener("pointermove", scrub), { once: true });
 });
 elements.duplicateFormationButton.addEventListener("click", duplicateFormation);
 elements.deleteFormationButton.addEventListener("click", deleteFormation);

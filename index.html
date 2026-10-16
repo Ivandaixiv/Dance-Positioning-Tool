@@ -8,11 +8,18 @@
       content="default-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://s.ytimg.com; script-src 'self' https://www.youtube.com https://s.ytimg.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src https://www.youtube.com https://www.youtube-nocookie.com; img-src 'self' data:; media-src 'self' blob: data:; connect-src 'self' https://www.youtube.com https://www.youtube-nocookie.com;"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ali Dance Tool</title>
+    <title>Dance Tool</title>
     <meta id="themeColorMeta" name="theme-color" content="#F3F5F9" />
     <script>
       try {
-        if (window.localStorage.getItem("ali-dance-tool-theme") === "dark") {
+        const themeKey = "dance-tool-theme";
+        const legacyThemeKey = Object.keys(window.localStorage)
+          .find((key) => key.endsWith("-dance-tool-theme"));
+        const savedTheme = window.localStorage.getItem(themeKey)
+          || (legacyThemeKey ? window.localStorage.getItem(legacyThemeKey) : null);
+        if (savedTheme) window.localStorage.setItem(themeKey, savedTheme);
+        if (legacyThemeKey) window.localStorage.removeItem(legacyThemeKey);
+        if (savedTheme === "dark") {
           document.documentElement.dataset.theme = "dark";
           document.querySelector("#themeColorMeta").setAttribute("content", "#0D111A");
         }
@@ -42,8 +49,12 @@
           </div>
         </div>
         <div class="app-title">
-          <h1>Ali Dance Tool</h1>
+          <h1>Dance Tool</h1>
           <span>Choreography workspace</span>
+        </div>
+        <div class="history-actions" aria-label="Edit history">
+          <button id="undoButton" class="appbar-button" type="button" title="Undo (Ctrl/Cmd+Z)" disabled>↶ <span>Undo</span></button>
+          <button id="redoButton" class="appbar-button" type="button" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↷ <span>Redo</span></button>
         </div>
         <button id="themeToggleButton" class="theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Switch to dark mode" title="Switch to dark mode">
           <svg class="theme-icon sun-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -154,6 +165,61 @@
               <textarea id="formationNotesInput" rows="2" placeholder="Counts, camera notes, or transitions"></textarea>
             </label>
 
+            <details class="editor-tools">
+              <summary>
+                <span>Formation tools</span>
+                <small id="selectionCountLabel">1 dancer selected</small>
+              </summary>
+              <div class="editor-tools-content">
+                <div class="selection-actions tool-row">
+                  <strong>Selection</strong>
+                  <button id="selectAllDancersButton" class="ghost-button small-button" type="button" title="Select every dancer">Select all</button>
+                  <button id="clearSelectionButton" class="ghost-button small-button" type="button" title="Clear the current selection">Clear</button>
+                  <button id="deleteSelectedDancersButton" class="danger-button small-button" type="button" title="Delete selected dancers from every formation">Delete dancers</button>
+                  <span>Shift-click or drag a box on the 2D stage to select.</span>
+                </div>
+
+                <div class="template-tools tool-row">
+                  <label class="field inline-field">
+                    <span>Template</span>
+                    <select id="formationTemplateSelect">
+                      <option value="horizontal-line">Horizontal line</option>
+                      <option value="vertical-line">Vertical line</option>
+                      <option value="v">V formation</option>
+                      <option value="inverted-v">Inverted V</option>
+                      <option value="circle">Circle</option>
+                      <option value="semicircle">Semicircle</option>
+                      <option value="diagonal-line">Diagonal line</option>
+                      <option value="grid">Grid</option>
+                      <option value="staggered-rows">Staggered rows</option>
+                      <option value="two-lines">Two parallel lines</option>
+                    </select>
+                  </label>
+                  <button id="previewTemplateButton" class="ghost-button small-button" type="button" title="Preview without changing the formation">Preview</button>
+                  <button id="applyTemplateButton" class="primary-button small-button" type="button" title="Apply template to selected dancers">Apply</button>
+                </div>
+
+                <div class="alignment-tools tool-row" aria-label="Alignment tools">
+                  <strong>Align</strong>
+                  <button class="ghost-button icon-button" data-align="left" type="button" title="Align left">Left</button>
+                  <button class="ghost-button icon-button" data-align="center-vertical" type="button" title="Align vertical centres">V centre</button>
+                  <button class="ghost-button icon-button" data-align="right" type="button" title="Align right">Right</button>
+                  <button class="ghost-button icon-button" data-align="top" type="button" title="Align top">Top</button>
+                  <button class="ghost-button icon-button" data-align="center-horizontal" type="button" title="Align horizontal centres">H centre</button>
+                  <button class="ghost-button icon-button" data-align="bottom" type="button" title="Align bottom">Bottom</button>
+                  <button class="ghost-button icon-button" data-align="distribute-horizontal" type="button" title="Distribute horizontally">Space H</button>
+                  <button class="ghost-button icon-button" data-align="distribute-vertical" type="button" title="Distribute vertically">Space V</button>
+                </div>
+
+                <div class="grid-tools tool-row">
+                  <strong>Stage</strong>
+                  <label class="check-control"><input id="showGridInput" type="checkbox" checked /> Show grid</label>
+                  <label class="check-control"><input id="snapToGridInput" type="checkbox" /> Snap to grid</label>
+                  <label class="field grid-size-field"><span>Grid size</span><input id="gridSizeInput" type="number" min="2" max="20" step="1" value="5" /></label>
+                </div>
+              </div>
+            </details>
+
             <section id="cuesPanel" class="timeline-drawer" aria-label="Cue timeline">
               <div class="timeline-header">
                 <div class="timeline-heading">
@@ -192,10 +258,41 @@
           </div>
         </section>
       </main>
+
+      <section id="countTimelinePanel" class="panel count-timeline-panel" aria-label="Musical count timeline">
+        <div class="count-timeline-header">
+          <div>
+            <p class="eyebrow">Music map</p>
+            <h2>8-count Timeline</h2>
+          </div>
+          <div class="count-timeline-controls">
+            <label class="field compact-field"><span>BPM</span><input id="bpmInput" type="number" min="20" max="300" step="0.1" /></label>
+            <label class="field compact-field"><span>Music starts at</span><input id="musicOffsetInput" type="number" min="0" step="0.1" /></label>
+            <label class="field compact-field"><span>Section</span><select id="sectionLabelSelect"><option>Intro</option><option>Verse</option><option>Chorus</option><option>Bridge</option><option>Outro</option></select></label>
+            <button id="addSectionButton" class="ghost-button small-button" type="button" title="Add section label at the playhead">Add section</button>
+            <button id="addFormationAtPlayheadButton" class="primary-button small-button" type="button" title="Add a formation cue at the current playback position">Add cue at playhead</button>
+          </div>
+        </div>
+        <div class="count-status-row">
+          <strong id="currentCountLabel">Pre-roll</strong>
+          <span id="timelineActiveLabel">Active: Formation 1</span>
+          <span id="timelineNextLabel">Next: none</span>
+          <small>Constant BPM · one count per beat. YouTube seeking is approximate.</small>
+        </div>
+        <div id="countTimelineViewport" class="count-timeline-viewport">
+          <div id="countTimelineTrack" class="count-timeline-track" title="Click or drag to scrub">
+            <div id="countTimelineGroups" class="count-timeline-groups"></div>
+            <div id="sectionMarkers" class="section-markers"></div>
+            <div id="formationCueMarkers" class="formation-cue-markers"></div>
+            <div id="timelinePlayhead" class="timeline-playhead" aria-hidden="true"></div>
+          </div>
+        </div>
+      </section>
     </div>
 
     <input id="projectFileInput" class="visually-hidden" type="file" accept=".json,application/json" />
     <input id="videoFileInput" class="visually-hidden" type="file" accept="video/mp4,video/quicktime,video/webm,video/*" />
+    <script src="./dance-core.js"></script>
     <script src="./renderer.js"></script>
   </body>
 </html>

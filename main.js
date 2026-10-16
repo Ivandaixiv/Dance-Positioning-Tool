@@ -9,6 +9,7 @@ const staticFiles = new Map([
   ["/", "index.html"],
   ["/index.html", "index.html"],
   ["/styles.css", "styles.css"],
+  ["/dance-core.js", "dance-core.js"],
   ["/renderer.js", "renderer.js"],
   ["/manifest.webmanifest", "manifest.webmanifest"],
   ["/assets/dancer-sprite-sheet.png", "assets/dancer-sprite-sheet.png"]
@@ -26,7 +27,7 @@ const contentTypes = {
   ".webm": "video/webm"
 };
 
-const APP_PORT = 47832;
+const APP_PORT = 0;
 const localMediaFiles = new Map();
 let appServer;
 let appUrl;
@@ -60,7 +61,7 @@ const startAppServer = () => new Promise((resolve, reject) => {
           return;
         }
 
-        const match = /^bytes=(d+)-(d*)$/.exec(range);
+        const match = /^bytes=(\d+)-(\d*)$/.exec(range);
         if (!match) {
           response.writeHead(416, { "Content-Range": "bytes */" + stats.size });
           response.end();
@@ -69,6 +70,11 @@ const startAppServer = () => new Promise((resolve, reject) => {
 
         const start = Number(match[1]);
         const end = match[2] ? Math.min(Number(match[2]), stats.size - 1) : stats.size - 1;
+        if (start >= stats.size || end < start) {
+          response.writeHead(416, { "Content-Range": "bytes */" + stats.size });
+          response.end();
+          return;
+        }
         response.writeHead(206, {
           "Accept-Ranges": "bytes",
           "Content-Length": end - start + 1,
@@ -107,7 +113,7 @@ const startAppServer = () => new Promise((resolve, reject) => {
 
   appServer.once("error", reject);
   appServer.listen(APP_PORT, "127.0.0.1", () => {
-    appUrl = "http://127.0.0.1:" + APP_PORT;
+    appUrl = "http://127.0.0.1:" + appServer.address().port;
     resolve();
   });
 });
