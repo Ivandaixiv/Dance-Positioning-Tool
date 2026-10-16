@@ -1,4 +1,4 @@
-# Ali Dance Tool
+# Dance Tool
 
 Desktop choreography charting app built with Electron.
 
