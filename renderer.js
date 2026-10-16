@@ -4,7 +4,6 @@ const YOUTUBE_API_URL = "https://www.youtube.com/iframe_api";
 const {
   SCHEMA_VERSION,
   HistoryStack,
-  alignPositions,
   applyTemplate,
   countInfo,
   createTemplatePositions,
@@ -79,6 +78,8 @@ const elements = {
   formationNameInput: document.querySelector("#formationNameInput"),
   formationTimeInput: document.querySelector("#formationTimeInput"),
   formationNotesInput: document.querySelector("#formationNotesInput"),
+  formationNoteBanner: document.querySelector("#formationNoteBanner"),
+  formationNoteText: document.querySelector("#formationNoteText"),
   transitionToolbar: document.querySelector("#transitionToolbar"),
   transitionTitle: document.querySelector("#transitionTitle"),
   transitionHint: document.querySelector("#transitionHint"),
@@ -91,10 +92,7 @@ const elements = {
   addFormationButton: document.querySelector("#addFormationButton"),
   duplicateFormationButton: document.querySelector("#duplicateFormationButton"),
   deleteFormationButton: document.querySelector("#deleteFormationButton"),
-  sortTimelineButton: document.querySelector("#sortTimelineButton"),
-  autoArrangeButton: document.querySelector("#autoArrangeButton"),
   captureTimestampButton: document.querySelector("#captureTimestampButton"),
-  jumpToFormationButton: document.querySelector("#jumpToFormationButton"),
   saveProjectButton: document.querySelector("#saveProjectButton"),
   loadProjectButton: document.querySelector("#loadProjectButton"),
   newProjectButton: document.querySelector("#newProjectButton"),
@@ -105,7 +103,6 @@ const elements = {
   formationTemplateSelect: document.querySelector("#formationTemplateSelect"),
   previewTemplateButton: document.querySelector("#previewTemplateButton"),
   applyTemplateButton: document.querySelector("#applyTemplateButton"),
-  alignmentButtons: [...document.querySelectorAll("[data-align]")],
   showGridInput: document.querySelector("#showGridInput"),
   snapToGridInput: document.querySelector("#snapToGridInput"),
   gridSizeInput: document.querySelector("#gridSizeInput"),
@@ -144,6 +141,8 @@ let activeTransitionKey = null;
 let isAddingWaypoint = false;
 let templatePreview = null;
 let suppressNextMarkerClick = false;
+let displayedNoteFormationId = null;
+let noteAnimationFrame = null;
 let timelineDuration = 60;
 let timelineCursorTime = 0;
 const history = new HistoryStack(120);
@@ -1211,7 +1210,7 @@ function renderTransitionStage(transition) {
     startNode.title = `${dancer.name} start`;
     positionStageElement(startNode, start);
     startNode.addEventListener("pointerdown", beginTransitionEndpointDrag);
-    startNode.addEventListener("click", (event) => selectDancer(dancer.id, { toggle: event.shiftKey }));
+    startNode.addEventListener("click", () => selectDancer(dancer.id));
     elements.stageSurface.append(startNode);
 
     const endNode = document.createElement("button");
@@ -1224,7 +1223,7 @@ function renderTransitionStage(transition) {
     endNode.title = `${dancer.name} destination`;
     positionStageElement(endNode, end);
     endNode.addEventListener("pointerdown", beginTransitionEndpointDrag);
-    endNode.addEventListener("click", (event) => selectDancer(dancer.id, { toggle: event.shiftKey }));
+    endNode.addEventListener("click", () => selectDancer(dancer.id));
     elements.stageSurface.append(endNode);
 
     (transition.paths[dancer.id] || []).forEach((point, index) => {
@@ -1238,7 +1237,7 @@ function renderTransitionStage(transition) {
       waypoint.title = `${dancer.name} waypoint ${index + 1}`;
       positionStageElement(waypoint, point);
       waypoint.addEventListener("pointerdown", beginWaypointDrag);
-      waypoint.addEventListener("click", (event) => selectDancer(dancer.id, { toggle: event.shiftKey }));
+      waypoint.addEventListener("click", () => selectDancer(dancer.id));
       elements.stageSurface.append(waypoint);
     });
 
@@ -1309,7 +1308,7 @@ function renderStage(formation) {
         suppressNextMarkerClick = false;
         return;
       }
-      selectDancer(dancer.id, { toggle: event.shiftKey });
+      selectDancer(dancer.id, { toggle: true });
     });
     elements.stageSurface.append(marker);
     renderedMarkers.set(dancer.id, marker);
@@ -1324,10 +1323,29 @@ function renderLegend() {
     row.className = `legend-row${getSelectedDancerIds().includes(dancer.id) ? " active" : ""}`;
     row.dataset.dancerId = String(dancer.id);
 
-    const swatch = document.createElement("div");
+    const swatch = document.createElement("label");
     swatch.className = "swatch";
     swatch.style.background = dancer.color;
-    swatch.textContent = String(dancer.id);
+    swatch.title = `Change ${dancer.name}'s color`;
+    swatch.addEventListener("pointerdown", (event) => event.stopPropagation());
+    swatch.addEventListener("click", (event) => event.stopPropagation());
+    const swatchNumber = document.createElement("span");
+    swatchNumber.textContent = String(dancer.id);
+    const colorInput = document.createElement("input");
+    colorInput.className = "dancer-color-input";
+    colorInput.type = "color";
+    colorInput.value = dancer.color;
+    colorInput.setAttribute("aria-label", `Color for ${dancer.name}`);
+    colorInput.addEventListener("pointerdown", (event) => event.stopPropagation());
+    colorInput.addEventListener("click", (event) => event.stopPropagation());
+    colorInput.addEventListener("change", (event) => {
+      event.stopPropagation();
+      const before = deepClone(project);
+      dancer.color = event.target.value.toUpperCase();
+      commitHistory(before);
+      render();
+    });
+    swatch.append(swatchNumber, colorInput);
 
     const details = document.createElement("div");
     details.className = "legend-details";
@@ -1391,8 +1409,8 @@ function renderLegend() {
       row.append(poseControl);
     }
 
-    row.addEventListener("click", (event) => {
-      selectDancer(dancer.id, { toggle: event.shiftKey });
+    row.addEventListener("click", () => {
+      selectDancer(dancer.id, { toggle: true });
     });
     elements.dancerLegend.append(row);
   });
@@ -1455,6 +1473,40 @@ function renderTimeline(activeFormationId) {
     });
 }
 
+function updateFormationNote(formation) {
+  const note = formation.notes.trim();
+  if (noteAnimationFrame) {
+    window.cancelAnimationFrame(noteAnimationFrame);
+    noteAnimationFrame = null;
+  }
+
+  if (!note) {
+    displayedNoteFormationId = null;
+    elements.formationNoteBanner.classList.remove("visible");
+    elements.formationNoteBanner.setAttribute("aria-hidden", "true");
+    elements.formationNoteText.textContent = "";
+    return;
+  }
+
+  const formationChanged = displayedNoteFormationId !== formation.id;
+  displayedNoteFormationId = formation.id;
+  elements.formationNoteText.textContent = note;
+  elements.formationNoteBanner.setAttribute("aria-hidden", "false");
+
+  if (formationChanged) {
+    elements.formationNoteBanner.classList.remove("visible");
+    noteAnimationFrame = window.requestAnimationFrame(() => {
+      if (displayedNoteFormationId === formation.id) {
+        elements.formationNoteBanner.classList.add("visible");
+      }
+      noteAnimationFrame = null;
+    });
+    return;
+  }
+
+  elements.formationNoteBanner.classList.add("visible");
+}
+
 function render() {
   orderedFormationsCache = null;
   lastPlaybackLabel = "";
@@ -1500,6 +1552,7 @@ function render() {
   renderLegend();
   renderTimeline(activeFormation.id);
   renderCountTimeline();
+  updateFormationNote(activeTransition ? { id: null, notes: "" } : activeFormation);
   updateSelectedDancerUi();
   updateHistoryButtons();
 }
@@ -1513,7 +1566,7 @@ function beginMarkerDrag(event) {
   let selectedIds = getSelectedDancerIds();
   const selectionChanged = !selectedIds.includes(dancerId);
   if (!selectedIds.includes(dancerId)) {
-    selectedIds = event.shiftKey ? [...selectedIds, dancerId] : [dancerId];
+    selectedIds = [...selectedIds, dancerId];
   }
   setSelection(selectedIds, dancerId, false);
   const selectedSet = new Set(selectedIds);
@@ -1674,20 +1727,6 @@ function deleteFormation() {
   render();
 }
 
-function sortFormations() {
-  const before = deepClone(project);
-  project.formations.sort((a, b) => a.time - b.time);
-  commitHistory(before);
-  render();
-}
-
-function autoArrangeActiveFormation() {
-  const before = deepClone(project);
-  getActiveFormation().positions = autoPositions(project.dancers.map((dancer) => dancer.id));
-  commitHistory(before);
-  render();
-}
-
 function setCurrentFormationTimeFromMedia() {
   const before = deepClone(project);
   getActiveFormation().time = Number(getCurrentMediaTime().toFixed(1));
@@ -1739,15 +1778,6 @@ function applySelectedTemplate() {
   render();
 }
 
-function alignSelectedDancers(mode) {
-  const selectedIds = getSelectedDancerIds();
-  if (selectedIds.length < 2) return;
-  const before = deepClone(project);
-  getActiveFormation().positions = alignPositions(getActiveFormation().positions, selectedIds, mode);
-  commitHistory(before);
-  render();
-}
-
 function beginSelectionRectangle(event) {
   if (
     event.button !== 0
@@ -1760,7 +1790,7 @@ function beginSelectionRectangle(event) {
   const bounds = elements.stageSurface.getBoundingClientRect();
   const startX = clamp(event.clientX - bounds.left, 0, bounds.width);
   const startY = clamp(event.clientY - bounds.top, 0, bounds.height);
-  const baseline = event.shiftKey ? getSelectedDancerIds() : [];
+  const baseline = getSelectedDancerIds();
   const rectangle = document.createElement("div");
   rectangle.className = "selection-rectangle";
   elements.stageSurface.append(rectangle);
@@ -2199,9 +2229,6 @@ elements.applyTemplateButton.addEventListener("click", applySelectedTemplate);
 elements.formationTemplateSelect.addEventListener("change", () => {
   if (templatePreview) previewSelectedTemplate();
 });
-elements.alignmentButtons.forEach((button) => {
-  button.addEventListener("click", () => alignSelectedDancers(button.dataset.align));
-});
 elements.showGridInput.addEventListener("change", (event) => {
   project.editorSettings.showGrid = event.target.checked;
   saveState();
@@ -2253,12 +2280,7 @@ elements.countTimelineTrack.addEventListener("pointerdown", (event) => {
 });
 elements.duplicateFormationButton.addEventListener("click", duplicateFormation);
 elements.deleteFormationButton.addEventListener("click", deleteFormation);
-elements.sortTimelineButton.addEventListener("click", sortFormations);
-elements.autoArrangeButton.addEventListener("click", autoArrangeActiveFormation);
 elements.captureTimestampButton.addEventListener("click", setCurrentFormationTimeFromMedia);
-elements.jumpToFormationButton.addEventListener("click", () => {
-  seekCurrentMedia(getActiveFormation().time);
-});
 elements.saveProjectButton.addEventListener("click", () => {
   setFileMenuOpen(false);
   saveProjectToDisk();
