@@ -2665,15 +2665,6 @@ body.help-open {
   }
 }
 
-/* Editing flow: keep controls beside the part of the plan they change. */
-.panel-description,
-.section-description {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
 .media-source-group {
   display: grid;
   gap: 5px;
@@ -2704,6 +2695,12 @@ body.help-open {
   align-items: end;
 }
 
+@media (min-width: 1350px) {
+  .stage-controls {
+    grid-template-columns: minmax(0, 1fr) 106px minmax(0, 1fr) 205px;
+  }
+}
+
 .cue-time-field label {
   color: var(--muted);
 }
@@ -2725,8 +2722,9 @@ body.help-open {
 }
 
 .timeline-header {
-  align-items: flex-start;
-  flex-direction: column;
+  align-items: center;
+  flex-direction: row;
+  flex-wrap: wrap;
 }
 
 .timeline-heading {
@@ -2734,16 +2732,8 @@ body.help-open {
 }
 
 .timeline-actions {
-  width: 100%;
-  justify-content: flex-start;
-}
-
-.timeline-help {
-  margin: 0;
-  padding: 7px 10px 0;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.4;
+  width: auto;
+  justify-content: flex-end;
 }
 
 .dancer-roster {
@@ -2760,10 +2750,10 @@ body.help-open {
 
 .workspace-subheading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 6px;
-  min-height: 21px;
+  min-height: 17px;
 }
 
 .workspace-subheading strong {
@@ -2771,14 +2761,16 @@ body.help-open {
   font-size: 12px;
 }
 
-.workspace-subheading span {
-  color: var(--muted);
-  font-size: 10px;
-  text-align: right;
+.stage-playback-bar {
+  margin-bottom: 6px;
+}
+
+.stage-playback-bar button {
+  display: none;
 }
 
 .formation-note-banner {
-  top: 39px;
+  top: 35px;
 }
 
 .primary-button:focus-visible,
@@ -2799,12 +2791,102 @@ body.help-open {
 }
 
 @media (max-width: 760px) {
+  .stage-panel .panel-header-actions .view-switcher {
+    flex: 1;
+    width: auto;
+  }
+
+  .embedded-count-timeline .count-status-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 2px 8px;
+    padding: 6px 10px;
+  }
+
+  .embedded-count-timeline .count-status-row strong {
+    min-width: 0;
+  }
+
+  .embedded-count-timeline #timelineActiveLabel {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .embedded-count-timeline #timelineNextLabel {
+    display: none;
+  }
+
+  .video-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .video-meta .status-card:last-child {
+    display: none;
+  }
+
+  .video-meta .status-card {
+    padding: 6px 8px;
+  }
+
+  .source-banner {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 6px 9px;
+  }
+
+  .source-banner .status-label {
+    margin: 0;
+  }
+
+  .source-banner strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .timeline-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .timeline-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .stage-layout {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .dancer-roster {
     order: 2;
+  }
+
+  .stage-playback-bar {
+    display: flex;
+    min-height: 34px;
+    margin-bottom: 4px;
+  }
+
+  .stage-playback-bar button {
+    display: inline-block;
+    min-width: 86px;
+    min-height: 30px;
+    padding: 4px 10px;
+  }
+
+  .stage-playback-bar button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .formation-note-banner {
+    top: 50px;
   }
 }
 

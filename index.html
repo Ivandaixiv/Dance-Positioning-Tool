@@ -76,7 +76,6 @@
             <div>
               <p class="eyebrow">Step 1 · Playback</p>
               <h2>Video &amp; timing</h2>
-              <p class="panel-description">Load a rehearsal video, then use the timeline to find each cue.</p>
             </div>
           </div>
 
@@ -121,7 +120,6 @@
                 <div>
                   <p class="eyebrow">Music map</p>
                   <h2>8-count Timeline</h2>
-                  <p class="section-description">Click or drag the counts to seek through the video.</p>
                 </div>
                 <div class="count-timeline-controls">
                   <label class="field compact-field"><span>BPM</span><input id="bpmInput" type="number" min="20" max="300" step="0.1" /></label>
@@ -154,7 +152,6 @@
             <div>
               <p class="eyebrow">Step 2 · Choreography</p>
               <h2>Stage &amp; formations</h2>
-              <p class="panel-description">Select a dancer, drag them into place, then add the next formation.</p>
             </div>
             <div class="panel-header-actions compact">
               <div class="view-switcher" aria-label="Stage view">
@@ -197,7 +194,7 @@
 
             <label class="field">
               <span>Notes for this formation</span>
-              <textarea id="formationNotesInput" rows="2" placeholder="Counts, camera notes, or transitions"></textarea>
+              <textarea id="formationNotesInput" rows="1" placeholder="Counts, camera notes, or transitions"></textarea>
             </label>
 
             <details class="editor-tools">
@@ -248,14 +245,12 @@
                   <span id="cueCountLabel">1 formation</span>
                 </div>
                 <div class="timeline-actions">
-                  <button id="addFormationButton" class="primary-button small-button" type="button" title="Add a formation 8 seconds after the selected one">Add formation</button>
-                  <button id="duplicateFormationButton" class="ghost-button small-button" type="button" title="Copy the selected formation 0.5 seconds later">Duplicate</button>
+                  <button id="addFormationButton" class="primary-button small-button" type="button" title="Add a formation 8 seconds after the selected one">Add cue</button>
+                  <button id="duplicateFormationButton" class="ghost-button small-button" type="button" title="Copy the selected formation 0.5 seconds later">Copy</button>
                   <button id="deleteFormationButton" class="danger-button small-button" type="button">Delete</button>
                   <button id="toggleCuesButton" class="ghost-button small-button" type="button" aria-label="Show all formation cues" aria-expanded="false">Show all</button>
                 </div>
               </div>
-
-              <p class="timeline-help">Select a cue to edit it. Use the transition between cues to plan dancer paths.</p>
 
               <div id="cuesContent" class="timeline-content">
                 <div id="timelineList" class="timeline-list"></div>
@@ -277,11 +272,14 @@
 
             <div class="stage-layout">
               <aside class="dancer-roster" aria-label="Dancers">
-                <div class="workspace-subheading"><strong>Dancers</strong><span>Select, rename, or change color</span></div>
+                <div class="workspace-subheading"><strong>Dancers</strong></div>
                 <div class="legend" id="dancerLegend"></div>
               </aside>
               <div class="stage-canvas">
-                <div class="workspace-subheading"><strong>Stage</strong><span>Drag dancers to set their positions</span></div>
+                <div class="workspace-subheading stage-playback-bar">
+                  <strong>Stage</strong>
+                  <button id="stagePlayButton" class="primary-button small-button" type="button" aria-label="Play video and dance plan" title="Load a video to play" disabled>▶ Play</button>
+                </div>
                 <aside id="formationNoteBanner" class="formation-note-banner" aria-live="polite" aria-hidden="true">
                   <strong>Formation note</strong>
                   <p id="formationNoteText"></p>

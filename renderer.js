@@ -74,6 +74,7 @@ const elements = {
   activeFormationLabel: document.querySelector("#activeFormationLabel"),
   mediaSourceLabel: document.querySelector("#mediaSourceLabel"),
   playerFrame: document.querySelector("#playerFrame"),
+  stagePlayButton: document.querySelector("#stagePlayButton"),
   stageSurface: document.querySelector("#stageSurface"),
   dancerLegend: document.querySelector("#dancerLegend"),
   dancerCountInput: document.querySelector("#dancerCountInput"),
@@ -134,6 +135,7 @@ let activeVideoObjectUrl = null;
 let youtubeApiReady = false;
 let pendingYouTubeVideoId = project.youtubeVideoId || "";
 let playbackTimer = null;
+let stageMediaReady = false;
 let playbackPathCache = null;
 let orderedFormationsCache = null;
 let renderedMarkers = new Map();
@@ -590,12 +592,41 @@ window.onYouTubeIframeAPIReady = () => {
   }
 };
 
+function updateStagePlaybackButton() {
+  const playing = Boolean(playbackTimer);
+  elements.stagePlayButton.disabled = !stageMediaReady;
+  elements.stagePlayButton.textContent = playing ? "Pause" : "▶ Play";
+  elements.stagePlayButton.setAttribute("aria-pressed", String(playing));
+  elements.stagePlayButton.setAttribute("aria-label", `${playing ? "Pause" : "Play"} video and dance plan`);
+  elements.stagePlayButton.title = stageMediaReady
+    ? `${playing ? "Pause" : "Play"} video and dance plan`
+    : "Load a video to play";
+}
+
+function toggleStagePlayback() {
+  if (!stageMediaReady) return;
+  if (project.mediaType === "youtube" && youtubePlayer) {
+    if (playbackTimer) youtubePlayer.pauseVideo();
+    else youtubePlayer.playVideo();
+  } else if (project.mediaType === "file" && htmlVideo) {
+    if (htmlVideo.paused) {
+      htmlVideo.play().catch(() => {
+        elements.videoStatus.textContent = "Tap the video to start playback.";
+        updateStagePlaybackButton();
+      });
+    } else {
+      htmlVideo.pause();
+    }
+  }
+}
+
 function stopPlaybackWatcher() {
   if (playbackTimer) {
     window.cancelAnimationFrame(playbackTimer);
     playbackTimer = null;
   }
   elements.stageSurface.classList.remove("playing");
+  updateStagePlaybackButton();
 }
 
 function getCurrentMediaTime() {
@@ -815,6 +846,7 @@ function startPlaybackWatcher() {
   };
 
   playbackTimer = window.requestAnimationFrame(updatePlayback);
+  updateStagePlaybackButton();
 }
 
 function handleYouTubeStateChange(event) {
@@ -843,6 +875,7 @@ function handleYouTubeStateChange(event) {
 }
 
 function clearPlayerFrame() {
+  stageMediaReady = false;
   stopPlaybackWatcher();
   if (youtubePlayer && typeof youtubePlayer.destroy === "function") {
     youtubePlayer.destroy();
@@ -898,11 +931,15 @@ function loadYouTubeVideoById(videoId) {
     events: {
       onReady: () => {
         elements.videoStatus.textContent = "Ready";
+        stageMediaReady = true;
+        updateStagePlaybackButton();
         renderCountTimeline();
       },
       onStateChange: handleYouTubeStateChange,
       onError: () => {
         elements.videoStatus.textContent = "YouTube embed failed. Use Open MP4 if needed.";
+        stageMediaReady = false;
+        stopPlaybackWatcher();
       }
     }
   });
@@ -950,6 +987,8 @@ function wireHtmlVideoEvents(video) {
   video.addEventListener("loadedmetadata", () => {
     if (video !== htmlVideo) return;
     elements.videoStatus.textContent = "Ready";
+    stageMediaReady = true;
+    updateStagePlaybackButton();
     elements.currentTimeLabel.textContent = formatTime(video.currentTime);
     renderCountTimeline();
   });
@@ -964,7 +1003,11 @@ function wireHtmlVideoEvents(video) {
     updateCountTimelinePlayhead(video.currentTime);
   });
   video.addEventListener("error", () => {
-    if (video === htmlVideo) elements.videoStatus.textContent = "Could not play that video file.";
+    if (video === htmlVideo) {
+      elements.videoStatus.textContent = "Could not play that video file.";
+      stageMediaReady = false;
+      stopPlaybackWatcher();
+    }
   });
 }
 
@@ -1600,6 +1643,7 @@ function render() {
   updateFormationNote(activeTransition ? { id: null, notes: "" } : activeFormation);
   updateSelectedDancerUi();
   updateHistoryButtons();
+  updateStagePlaybackButton();
 }
 
 function beginMarkerDrag(event) {
@@ -2310,6 +2354,7 @@ elements.countTimelineTrack.addEventListener("pointerdown", (event) => {
 elements.duplicateFormationButton.addEventListener("click", duplicateFormation);
 elements.deleteFormationButton.addEventListener("click", deleteFormation);
 elements.captureTimestampButton.addEventListener("click", setCurrentFormationTimeFromMedia);
+elements.stagePlayButton.addEventListener("click", toggleStagePlayback);
 elements.saveProjectButton.addEventListener("click", () => {
   setFileMenuOpen(false);
   saveProjectToDisk();
