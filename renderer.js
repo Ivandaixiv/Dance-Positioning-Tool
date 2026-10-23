@@ -130,6 +130,7 @@ let nextFormationId = 1;
 let project = loadState();
 let youtubePlayer = null;
 let htmlVideo = null;
+let activeVideoObjectUrl = null;
 let youtubeApiReady = false;
 let pendingYouTubeVideoId = project.youtubeVideoId || "";
 let playbackTimer = null;
@@ -147,6 +148,11 @@ let displayedNoteFormationId = null;
 let noteAnimationFrame = null;
 let timelineDuration = 60;
 let timelineCursorTime = 0;
+let timelineBeatCount = 0;
+let timelineBeatDuration = 0;
+let timelineTrackWidth = 0;
+let renderedBeatRange = "";
+let beatRenderFrame = null;
 const history = new HistoryStack(120);
 
 function buildDefaultDancers(count) {
@@ -244,13 +250,18 @@ function normalizePositions(positions, dancerIds) {
     ? dancerIds
     : Array.from({ length: dancerIds }, (_, index) => index + 1);
   const fallback = autoPositions(ids);
-  const map = new Map((positions || []).map((position) => [Number(position.dancerId), position]));
+  const validPositions = Array.isArray(positions)
+    ? positions.filter((position) => position && typeof position === "object")
+    : [];
+  const map = new Map(validPositions.map((position) => [Number(position.dancerId), position]));
   return fallback.map((position) => {
     const existing = map.get(position.dancerId);
+    const x = Number(existing?.x);
+    const y = Number(existing?.y);
     return {
       dancerId: position.dancerId,
-      x: clamp(Number(existing?.x ?? position.x), 4, 96),
-      y: clamp(Number(existing?.y ?? position.y), 6, 94)
+      x: clamp(Number.isFinite(x) ? x : position.x, 4, 96),
+      y: clamp(Number.isFinite(y) ? y : position.y, 6, 94)
     };
   });
 }
@@ -277,7 +288,7 @@ function normalizeTransitions(transitions, formations, dancerIds) {
       if (!Array.isArray(rawPath)) {
         return;
       }
-      paths[dancerId] = rawPath.map((point) => ({
+      paths[dancerId] = rawPath.filter((point) => point && typeof point === "object").map((point) => ({
         x: clamp(Number(point.x) || 0, 4, 96),
         y: clamp(Number(point.y) || 0, 6, 94)
       }));
@@ -290,6 +301,10 @@ function normalizeTransitions(transitions, formations, dancerIds) {
 }
 
 function normalizeProject(data) {
+  if (!data || typeof data !== "object" || !Array.isArray(data.formations)
+    || data.formations.some((formation) => !formation || typeof formation !== "object")) {
+    throw new Error("Invalid choreography project");
+  }
   const dancerCount = clamp(Math.round(Number(data.dancerCount) || data.dancers?.length || 12), 1, 30);
   const rawDancers = Array.isArray(data.dancers) ? data.dancers.slice(0, dancerCount) : [];
   const usedDancerIds = new Set();
@@ -317,19 +332,26 @@ function normalizeProject(data) {
     ? savedNextDancerId
     : maximumDancerId + 1;
 
-  const formations = (data.formations || []).map((formation, index) => ({
-    id: Number(formation.id) || index + 1,
-    name: formation.name || `Formation ${index + 1}`,
-    time: Math.max(0, Number(formation.time) || 0),
-    notes: formation.notes || "",
-    positions: normalizePositions(formation.positions, dancerIds)
-  }));
+  const usedFormationIds = new Set();
+  let fallbackFormationId = 1;
+  const formations = data.formations.map((formation, index) => {
+    let id = Number(formation.id);
+    if (!Number.isSafeInteger(id) || id < 1 || usedFormationIds.has(id)) {
+      while (usedFormationIds.has(fallbackFormationId)) fallbackFormationId += 1;
+      id = fallbackFormationId;
+    }
+    usedFormationIds.add(id);
+    const time = Number(formation.time);
+    return {
+      id,
+      name: formation.name || `Formation ${index + 1}`,
+      time: Number.isFinite(time) ? Math.max(0, time) : 0,
+      notes: typeof formation.notes === "string" ? formation.notes : "",
+      positions: normalizePositions(formation.positions, dancerIds)
+    };
+  });
 
-  if (!formations.length) {
-    return defaultProject();
-  }
-
-  nextFormationId = Math.max(...formations.map((formation) => formation.id), 0) + 1;
+  if (!formations.length) throw new Error("Project has no formations");
 
   const normalized = {
     schemaVersion: SCHEMA_VERSION,
@@ -347,11 +369,12 @@ function normalizeProject(data) {
     formations,
     transitions: normalizeTransitions(data.transitions, formations, dancerIds),
     bpm: clamp(Number(data.bpm) || 120, 20, 300),
-    musicStartOffset: Math.max(0, Number(data.musicStartOffset) || 0),
-    sections: Array.isArray(data.sections) ? data.sections.map((section, index) => ({
+    musicStartOffset: Number.isFinite(Number(data.musicStartOffset))
+      ? Math.max(0, Number(data.musicStartOffset)) : 0,
+    sections: Array.isArray(data.sections) ? data.sections.filter((section) => section && typeof section === "object").map((section, index) => ({
       id: Number(section.id) || index + 1,
       label: section.label || "Section",
-      time: Math.max(0, Number(section.time) || 0)
+      time: Number.isFinite(Number(section.time)) ? Math.max(0, Number(section.time)) : 0
     })) : [],
     editorSettings: {
       showGrid: data.editorSettings?.showGrid !== false,
@@ -378,6 +401,7 @@ function normalizeProject(data) {
     normalized.localVideoUrl = "";
   }
 
+  nextFormationId = Math.max(...formations.map((formation) => formation.id), 0) + 1;
   return normalized;
 }
 
@@ -824,7 +848,17 @@ function clearPlayerFrame() {
     youtubePlayer.destroy();
   }
   youtubePlayer = null;
+  const previousVideo = htmlVideo;
   htmlVideo = null;
+  if (previousVideo) {
+    previousVideo.pause();
+    previousVideo.removeAttribute("src");
+    previousVideo.load();
+  }
+  if (activeVideoObjectUrl) {
+    URL.revokeObjectURL(activeVideoObjectUrl);
+    activeVideoObjectUrl = null;
+  }
   elements.playerFrame.innerHTML = "";
 }
 
@@ -835,16 +869,20 @@ function renderPlayerPlaceholder(message) {
 
 function loadYouTubeVideoById(videoId) {
   project.mediaType = "youtube";
+  project.localVideoPath = "";
+  project.localVideoUrl = "";
+  project.localVideoName = "";
   saveState();
+  clearPlayerFrame();
 
   if (!youtubeApiReady) {
     pendingYouTubeVideoId = videoId;
     elements.videoStatus.textContent = "Loading YouTube player...";
+    elements.playerFrame.innerHTML = '<div class="player-placeholder">Loading YouTube player...</div>';
     ensureYouTubeApi();
     return;
   }
 
-  clearPlayerFrame();
   elements.playerFrame.innerHTML = '<div id="youtubePlayer"></div>';
   youtubePlayer = new window.YT.Player("youtubePlayer", {
     width: "100%",
@@ -890,10 +928,12 @@ function loadYouTubeFromInput() {
 
 function wireHtmlVideoEvents(video) {
   video.addEventListener("play", () => {
+    if (video !== htmlVideo) return;
     elements.videoStatus.textContent = "Playing";
     startPlaybackWatcher();
   });
   video.addEventListener("pause", () => {
+    if (video !== htmlVideo) return;
     elements.videoStatus.textContent = "Paused";
     stopPlaybackWatcher();
     const time = getCurrentMediaTime();
@@ -901,17 +941,20 @@ function wireHtmlVideoEvents(video) {
     animateFormationToTime(time);
   });
   video.addEventListener("ended", () => {
+    if (video !== htmlVideo) return;
     elements.videoStatus.textContent = "Ended";
     stopPlaybackWatcher();
     syncFormationToTime(video.duration, true);
     animateFormationToTime(video.duration);
   });
   video.addEventListener("loadedmetadata", () => {
+    if (video !== htmlVideo) return;
     elements.videoStatus.textContent = "Ready";
     elements.currentTimeLabel.textContent = formatTime(video.currentTime);
     renderCountTimeline();
   });
   video.addEventListener("timeupdate", () => {
+    if (video !== htmlVideo) return;
     if (playbackTimer) {
       return;
     }
@@ -920,9 +963,13 @@ function wireHtmlVideoEvents(video) {
     animateFormationToTime(video.currentTime);
     updateCountTimelinePlayhead(video.currentTime);
   });
+  video.addEventListener("error", () => {
+    if (video === htmlVideo) elements.videoStatus.textContent = "Could not play that video file.";
+  });
 }
 
 function loadLocalVideo(fileUrl, fileName, filePath) {
+  pendingYouTubeVideoId = "";
   project.mediaType = "file";
   project.localVideoUrl = fileUrl;
   project.localVideoName = fileName;
@@ -930,6 +977,7 @@ function loadLocalVideo(fileUrl, fileName, filePath) {
   saveState();
 
   clearPlayerFrame();
+  activeVideoObjectUrl = fileUrl.startsWith("blob:") ? fileUrl : null;
   const video = document.createElement("video");
   video.controls = true;
   video.preload = "metadata";
@@ -1264,10 +1312,14 @@ function renderStage(formation) {
       marker.classList.add("sprite-marker");
       marker.style.setProperty("--sprite-x", spriteColumns[frameColumn]);
       marker.style.setProperty("--sprite-y", spriteRows[frameRow]);
-      marker.innerHTML = `
-        <span class="sprite-avatar" aria-hidden="true"></span>
-        <span class="marker-number" style="background:${dancer.color}">${dancer.id}</span>
-      `;
+      const avatar = document.createElement("span");
+      avatar.className = "sprite-avatar";
+      avatar.setAttribute("aria-hidden", "true");
+      const number = document.createElement("span");
+      number.className = "marker-number";
+      number.style.background = dancer.color;
+      number.textContent = String(dancer.id);
+      marker.append(avatar, number);
     } else {
       marker.textContent = String(dancer.id);
     }
@@ -1410,11 +1462,14 @@ function renderTimeline(activeFormationId) {
       card.tabIndex = 0;
       card.setAttribute("role", "button");
       card.setAttribute("aria-current", formation.id === activeFormationId ? "true" : "false");
-      card.innerHTML = `
-        <span class="timeline-card-time">${formatTime(formation.time)}</span>
-        <h3>${formation.name}</h3>
-        <p>${formation.notes || "No notes yet."}</p>
-      `;
+      const time = document.createElement("span");
+      time.className = "timeline-card-time";
+      time.textContent = formatTime(formation.time);
+      const heading = document.createElement("h3");
+      heading.textContent = formation.name;
+      const note = document.createElement("p");
+      note.textContent = formation.notes || "No notes yet.";
+      card.append(time, heading, note);
       const activateFormation = () => {
         setActiveFormation(formation.id);
         seekCurrentMedia(formation.time);
@@ -1433,21 +1488,26 @@ function renderTimeline(activeFormationId) {
         return;
       }
 
-      const transition = ensureTransition(formation.id, nextFormation.id);
-      const mappedDancers = Object.values(transition.paths)
+      const transition = project.transitions[getTransitionKey(formation.id, nextFormation.id)];
+      const mappedDancers = Object.values(transition?.paths || {})
         .filter((path) => Array.isArray(path) && path.length > 0)
         .length;
       const transitionCard = document.createElement("button");
       transitionCard.type = "button";
       transitionCard.className = `transition-card${activeTransitionKey === getTransitionKey(formation.id, nextFormation.id) ? " active" : ""}`;
-      transitionCard.innerHTML = `
-        <span class="transition-arrow" aria-hidden="true">→</span>
-        <span>
-          <strong>Map transition</strong>
-          <small>${formation.name} to ${nextFormation.name}</small>
-          <small>${mappedDancers} of ${project.dancerCount} paths customized</small>
-        </span>
-      `;
+      const arrow = document.createElement("span");
+      arrow.className = "transition-arrow";
+      arrow.setAttribute("aria-hidden", "true");
+      arrow.textContent = "→";
+      const details = document.createElement("span");
+      const title = document.createElement("strong");
+      title.textContent = "Map transition";
+      const names = document.createElement("small");
+      names.textContent = `${formation.name} to ${nextFormation.name}`;
+      const pathCount = document.createElement("small");
+      pathCount.textContent = `${mappedDancers} of ${project.dancerCount} paths customized`;
+      details.append(title, names, pathCount);
+      transitionCard.append(arrow, details);
       transitionCard.addEventListener("click", () => {
         openTransitionEditor(formation.id, nextFormation.id);
       });
@@ -1797,23 +1857,14 @@ function beginCueDrag(event, formation) {
 
 function renderCountTimeline() {
   timelineDuration = getMediaDuration();
-  const beatDuration = secondsPerBeat(project.bpm);
-  const beats = Math.max(8, Math.ceil((timelineDuration - project.musicStartOffset) / beatDuration));
-  const trackWidth = Math.max(elements.countTimelineViewport.clientWidth || 720, beats * 26);
-  elements.countTimelineTrack.style.width = `${trackWidth}px`;
-  elements.countTimelineGroups.innerHTML = "";
+  timelineBeatDuration = secondsPerBeat(project.bpm);
+  timelineBeatCount = Math.max(8, Math.ceil((timelineDuration - project.musicStartOffset) / timelineBeatDuration));
+  timelineTrackWidth = Math.max(elements.countTimelineViewport.clientWidth || 720, timelineBeatCount * 26);
+  elements.countTimelineTrack.style.width = `${timelineTrackWidth}px`;
+  renderedBeatRange = "";
+  renderVisibleCountBeats();
   elements.sectionMarkers.innerHTML = "";
   elements.formationCueMarkers.innerHTML = "";
-
-  for (let beat = 0; beat < beats; beat += 1) {
-    const cell = document.createElement("span");
-    cell.className = `count-beat${beat % 8 === 0 ? " group-start" : ""}`;
-    cell.style.left = `${((project.musicStartOffset + beat * beatDuration) / timelineDuration) * 100}%`;
-    cell.style.width = `${(beatDuration / timelineDuration) * 100}%`;
-    cell.textContent = String((beat % 8) + 1);
-    cell.title = `8-count ${Math.floor(beat / 8) + 1}, count ${(beat % 8) + 1}`;
-    elements.countTimelineGroups.append(cell);
-  }
 
   project.sections.forEach((section) => {
     const marker = document.createElement("button");
@@ -1846,6 +1897,29 @@ function renderCountTimeline() {
     elements.formationCueMarkers.append(marker);
   });
   updateCountTimelinePlayhead(getCurrentMediaTime());
+}
+
+function renderVisibleCountBeats() {
+  const viewport = elements.countTimelineViewport;
+  const startTime = (viewport.scrollLeft / timelineTrackWidth) * timelineDuration;
+  const endTime = ((viewport.scrollLeft + viewport.clientWidth) / timelineTrackWidth) * timelineDuration;
+  const firstBeat = clamp(Math.floor((startTime - project.musicStartOffset) / timelineBeatDuration) - 2, 0, timelineBeatCount);
+  const lastBeat = clamp(Math.ceil((endTime - project.musicStartOffset) / timelineBeatDuration) + 2, 0, timelineBeatCount);
+  const range = `${firstBeat}:${lastBeat}`;
+  if (range === renderedBeatRange) return;
+  renderedBeatRange = range;
+
+  const cells = document.createDocumentFragment();
+  for (let beat = firstBeat; beat < lastBeat; beat += 1) {
+    const cell = document.createElement("span");
+    cell.className = `count-beat${beat % 8 === 0 ? " group-start" : ""}`;
+    cell.style.left = `${((project.musicStartOffset + beat * timelineBeatDuration) / timelineDuration) * 100}%`;
+    cell.style.width = `${(timelineBeatDuration / timelineDuration) * 100}%`;
+    cell.textContent = String((beat % 8) + 1);
+    cell.title = `8-count ${Math.floor(beat / 8) + 1}, count ${(beat % 8) + 1}`;
+    cells.append(cell);
+  }
+  elements.countTimelineGroups.replaceChildren(cells);
 }
 
 function addFormationAtPlayhead() {
@@ -1892,14 +1966,21 @@ async function saveProjectToDisk() {
     return;
   }
 
-  const response = await window.desktopApi.saveProject(portableProject);
-  if (!response.canceled && response.filePath) {
-    elements.videoStatus.textContent = `Saved ${response.filePath.split(/[/\\]/).pop()}`;
+  try {
+    const response = await window.desktopApi.saveProject(portableProject);
+    if (!response.canceled && response.filePath) {
+      elements.videoStatus.textContent = `Saved ${response.filePath.split(/[/\\]/).pop()}`;
+    }
+  } catch {
+    elements.videoStatus.textContent = "Could not save that JSON project.";
   }
 }
 
 function applyLoadedProject(data) {
-  project = normalizeProject(data);
+  const loadedProject = normalizeProject(data);
+  renderPlayerPlaceholder("Paste a YouTube link or open a local MP4 rehearsal video.");
+  project = loadedProject;
+  pendingYouTubeVideoId = "";
   history.clear();
   timelineCursorTime = 0;
   saveState();
@@ -1908,11 +1989,8 @@ function applyLoadedProject(data) {
   if (project.mediaType === "youtube" && project.youtubeVideoId) {
     pendingYouTubeVideoId = project.youtubeVideoId;
     loadYouTubeVideoById(project.youtubeVideoId);
-  } else {
-    renderPlayerPlaceholder("Paste a YouTube link or open a local MP4 rehearsal video.");
-    if (project.localVideoName) {
-      elements.videoStatus.textContent = "Re-select the local video on this device.";
-    }
+  } else if (project.localVideoName) {
+    elements.videoStatus.textContent = "Re-select the local video on this device.";
   }
 }
 
@@ -1923,21 +2001,23 @@ async function loadProjectFromDisk() {
     return;
   }
 
-  const response = await window.desktopApi.loadProject();
-  if (response.canceled || !response.data) {
-    return;
+  try {
+    const response = await window.desktopApi.loadProject();
+    if (response.canceled || !response.data) return;
+    applyLoadedProject(response.data);
+  } catch {
+    elements.videoStatus.textContent = "Could not open that JSON project.";
   }
-
-  applyLoadedProject(response.data);
 }
 
 function createFreshProject() {
+  renderPlayerPlaceholder("Paste a YouTube link or open a local MP4 rehearsal video.");
   project = defaultProject();
+  pendingYouTubeVideoId = "";
   history.clear();
   timelineCursorTime = 0;
   saveState();
   render();
-  renderPlayerPlaceholder("Paste a YouTube link or open a local MP4 rehearsal video.");
   elements.videoStatus.textContent = "No video loaded";
 }
 
@@ -2055,13 +2135,14 @@ elements.chooseLocalVideoButton.addEventListener("click", async () => {
     return;
   }
 
-  const response = await window.desktopApi.pickVideoFile();
-  if (response.canceled) {
-    return;
+  try {
+    const response = await window.desktopApi.pickVideoFile();
+    if (response.canceled) return;
+    loadLocalVideo(response.fileUrl, response.fileName, response.filePath);
+    updateMediaSourceLabel();
+  } catch {
+    elements.videoStatus.textContent = "Could not open that video file.";
   }
-
-  loadLocalVideo(response.fileUrl, response.fileName, response.filePath);
-  updateMediaSourceLabel();
 });
 
 elements.projectFileInput.addEventListener("change", async (event) => {
@@ -2204,6 +2285,14 @@ elements.addSectionButton.addEventListener("click", () => {
   render();
 });
 elements.addFormationAtPlayheadButton.addEventListener("click", addFormationAtPlayhead);
+elements.countTimelineViewport.addEventListener("scroll", () => {
+  if (beatRenderFrame !== null) return;
+  beatRenderFrame = window.requestAnimationFrame(() => {
+    beatRenderFrame = null;
+    renderVisibleCountBeats();
+  });
+});
+window.addEventListener("resize", renderCountTimeline);
 elements.countTimelineTrack.addEventListener("pointerdown", (event) => {
   if (event.button !== 0 || event.target.closest("button")) return;
   const bounds = elements.countTimelineTrack.getBoundingClientRect();
@@ -2233,7 +2322,6 @@ elements.newProjectButton.addEventListener("click", () => {
 
 applyTheme(document.documentElement.dataset.theme, false);
 render();
-ensureYouTubeApi();
 
 if (project.mediaType === "youtube" && project.youtubeVideoId) {
   loadYouTubeVideoById(project.youtubeVideoId);

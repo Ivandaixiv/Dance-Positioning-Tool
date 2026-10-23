@@ -4,6 +4,7 @@ const fsSync = require("fs");
 const fs = require("fs/promises");
 const http = require("http");
 const path = require("path");
+const { parseByteRange } = require("./media-range");
 
 const staticFiles = new Map([
   ["/", "index.html"],
@@ -32,6 +33,23 @@ const localMediaFiles = new Map();
 let appServer;
 let appUrl;
 
+function streamMediaFile(request, response, mediaPath, options) {
+  if (request.method === "HEAD") {
+    response.end();
+    return;
+  }
+  const stream = fsSync.createReadStream(mediaPath, options);
+  response.on("close", () => stream.destroy());
+  stream.on("error", () => {
+    if (response.headersSent) response.destroy();
+    else {
+      response.writeHead(404);
+      response.end();
+    }
+  });
+  stream.pipe(response);
+}
+
 const startAppServer = () => new Promise((resolve, reject) => {
   appServer = http.createServer(async (request, response) => {
     const pathname = new URL(request.url, "http://127.0.0.1").pathname;
@@ -57,31 +75,24 @@ const startAppServer = () => new Promise((resolve, reject) => {
             "Content-Length": stats.size,
             "Content-Type": type
           });
-          fsSync.createReadStream(mediaPath).pipe(response);
+          streamMediaFile(request, response, mediaPath);
           return;
         }
 
-        const match = /^bytes=(\d+)-(\d*)$/.exec(range);
-        if (!match) {
+        const byteRange = parseByteRange(range, stats.size);
+        if (!byteRange) {
           response.writeHead(416, { "Content-Range": "bytes */" + stats.size });
           response.end();
           return;
         }
-
-        const start = Number(match[1]);
-        const end = match[2] ? Math.min(Number(match[2]), stats.size - 1) : stats.size - 1;
-        if (start >= stats.size || end < start) {
-          response.writeHead(416, { "Content-Range": "bytes */" + stats.size });
-          response.end();
-          return;
-        }
+        const { start, end } = byteRange;
         response.writeHead(206, {
           "Accept-Ranges": "bytes",
           "Content-Length": end - start + 1,
           "Content-Range": "bytes " + start + "-" + end + "/" + stats.size,
           "Content-Type": type
         });
-        fsSync.createReadStream(mediaPath, { start, end }).pipe(response);
+        streamMediaFile(request, response, mediaPath, { start, end });
       } catch {
         response.writeHead(404);
         response.end();
