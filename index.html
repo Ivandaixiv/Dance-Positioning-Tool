@@ -74,23 +74,21 @@
         <section id="playbackPanel" class="panel video-panel">
           <div class="panel-header">
             <div>
-              <p class="eyebrow">Playback</p>
-              <h2>Video Sync</h2>
-            </div>
-            <div class="panel-header-actions">
-              <button id="captureTimestampButton" class="ghost-button">Use Current Time</button>
+              <p class="eyebrow">Step 1 · Playback</p>
+              <h2>Video &amp; timing</h2>
+              <p class="panel-description">Load a rehearsal video, then use the timeline to find each cue.</p>
             </div>
           </div>
 
           <div id="playbackContent" class="panel-content">
-            <label class="field">
-              <span>YouTube URL</span>
+            <div class="media-source-group">
+              <label class="field" for="youtubeUrlInput">YouTube video link</label>
               <div class="url-row">
                 <input id="youtubeUrlInput" type="text" placeholder="https://www.youtube.com/watch?v=..." />
                 <button id="loadVideoButton" class="primary-button">Load Video</button>
                 <button id="chooseLocalVideoButton" class="ghost-button">Open MP4</button>
               </div>
-            </label>
+            </div>
 
             <div class="video-meta">
               <div class="status-card">
@@ -123,6 +121,7 @@
                 <div>
                   <p class="eyebrow">Music map</p>
                   <h2>8-count Timeline</h2>
+                  <p class="section-description">Click or drag the counts to seek through the video.</p>
                 </div>
                 <div class="count-timeline-controls">
                   <label class="field compact-field"><span>BPM</span><input id="bpmInput" type="number" min="20" max="300" step="0.1" /></label>
@@ -153,8 +152,9 @@
         <section id="formationPanel" class="panel stage-panel">
           <div class="panel-header">
             <div>
-              <p class="eyebrow">Formation Editor</p>
-              <h2>Stage Plot</h2>
+              <p class="eyebrow">Step 2 · Choreography</p>
+              <h2>Stage &amp; formations</h2>
+              <p class="panel-description">Select a dancer, drag them into place, then add the next formation.</p>
             </div>
             <div class="panel-header-actions compact">
               <div class="view-switcher" aria-label="Stage view">
@@ -165,15 +165,13 @@
                 <button id="undoButton" class="appbar-button" type="button" title="Undo (Ctrl/Cmd+Z)" disabled>↶ <span>Undo</span></button>
                 <button id="redoButton" class="appbar-button" type="button" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↷ <span>Redo</span></button>
               </div>
-              <button id="duplicateFormationButton" class="ghost-button">Duplicate</button>
-              <button id="addFormationButton" class="primary-button">Add Formation</button>
             </div>
           </div>
 
           <div id="formationContent" class="panel-content">
             <div class="stage-controls">
               <label class="field compact-field">
-                <span>Project Title</span>
+                <span>Project name</span>
                 <input id="projectTitleInput" type="text" maxlength="80" />
               </label>
               <label class="field compact-field">
@@ -185,23 +183,26 @@
                 </div>
               </label>
               <label class="field compact-field grow">
-                <span>Formation Label</span>
+                <span>Formation name</span>
                 <input id="formationNameInput" type="text" maxlength="60" />
               </label>
-              <label class="field compact-field">
-                <span>Timestamp</span>
-                <input id="formationTimeInput" type="number" min="0" step="0.1" />
-              </label>
+              <div class="field compact-field cue-time-field">
+                <label for="formationTimeInput">Cue time (seconds)</label>
+                <div class="cue-time-row">
+                  <input id="formationTimeInput" type="number" min="0" step="0.1" />
+                  <button id="captureTimestampButton" class="ghost-button small-button" type="button" title="Set this formation's cue time to the current video position">Use playhead</button>
+                </div>
+              </div>
             </div>
 
             <label class="field">
-              <span>Formation Notes</span>
+              <span>Notes for this formation</span>
               <textarea id="formationNotesInput" rows="2" placeholder="Counts, camera notes, or transitions"></textarea>
             </label>
 
             <details class="editor-tools">
               <summary>
-                <span>Formation tools</span>
+                <span>More stage tools</span>
                 <small id="selectedDancerLabel">Dancer selected</small>
               </summary>
               <div class="editor-tools-content">
@@ -243,14 +244,18 @@
             <section id="cuesPanel" class="timeline-drawer" aria-label="Cue timeline">
               <div class="timeline-header">
                 <div class="timeline-heading">
-                  <strong>Cue timeline</strong>
+                  <strong>Formation cues</strong>
                   <span id="cueCountLabel">1 formation</span>
                 </div>
                 <div class="timeline-actions">
-                  <button id="deleteFormationButton" class="danger-button small-button" type="button">Delete cue</button>
-                  <button id="toggleCuesButton" class="ghost-button small-button" type="button" aria-label="Expand cue timeline" aria-expanded="false">Expand</button>
+                  <button id="addFormationButton" class="primary-button small-button" type="button" title="Add a formation 8 seconds after the selected one">Add formation</button>
+                  <button id="duplicateFormationButton" class="ghost-button small-button" type="button" title="Copy the selected formation 0.5 seconds later">Duplicate</button>
+                  <button id="deleteFormationButton" class="danger-button small-button" type="button">Delete</button>
+                  <button id="toggleCuesButton" class="ghost-button small-button" type="button" aria-label="Show all formation cues" aria-expanded="false">Show all</button>
                 </div>
               </div>
+
+              <p class="timeline-help">Select a cue to edit it. Use the transition between cues to plan dancer paths.</p>
 
               <div id="cuesContent" class="timeline-content">
                 <div id="timelineList" class="timeline-list"></div>
@@ -271,8 +276,12 @@
             </div>
 
             <div class="stage-layout">
-              <div class="legend" id="dancerLegend"></div>
+              <aside class="dancer-roster" aria-label="Dancers">
+                <div class="workspace-subheading"><strong>Dancers</strong><span>Select, rename, or change color</span></div>
+                <div class="legend" id="dancerLegend"></div>
+              </aside>
               <div class="stage-canvas">
+                <div class="workspace-subheading"><strong>Stage</strong><span>Drag dancers to set their positions</span></div>
                 <aside id="formationNoteBanner" class="formation-note-banner" aria-live="polite" aria-hidden="true">
                   <strong>Formation note</strong>
                   <p id="formationNoteText"></p>
@@ -323,7 +332,7 @@
             <span class="help-step-number" aria-hidden="true">4</span>
             <div>
               <h3>Build each formation</h3>
-              <p>Play to the right moment, select <strong>Use Current Time</strong>, then drag dancers into place. Click a dancer to select it.</p>
+              <p>Play to the right moment, select <strong>Use playhead</strong> beside the cue time, then drag dancers into place.</p>
             </div>
           </li>
           <li>

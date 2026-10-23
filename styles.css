@@ -2664,3 +2664,165 @@ body.help-open {
     transition-duration: 1ms;
   }
 }
+
+/* Editing flow: keep controls beside the part of the plan they change. */
+.panel-description,
+.section-description {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.media-source-group {
+  display: grid;
+  gap: 5px;
+}
+
+.media-source-group .field {
+  display: block;
+}
+
+.media-source-group input {
+  min-width: 0;
+  min-height: 35px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 8px 9px;
+  color: var(--text);
+  background: var(--control-bg);
+  outline: none;
+}
+
+.media-source-group input:focus {
+  border-color: var(--primary);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.stage-controls {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+}
+
+.cue-time-field label {
+  color: var(--muted);
+}
+
+.cue-time-row {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+}
+
+.cue-time-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.cue-time-row button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.timeline-header {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.timeline-heading {
+  align-items: center;
+}
+
+.timeline-actions {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.timeline-help {
+  margin: 0;
+  padding: 7px 10px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.dancer-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dancer-roster .legend {
+  flex: 1;
+  min-height: 0;
+}
+
+.workspace-subheading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 21px;
+}
+
+.workspace-subheading strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.workspace-subheading span {
+  color: var(--muted);
+  font-size: 10px;
+  text-align: right;
+}
+
+.formation-note-banner {
+  top: 39px;
+}
+
+.primary-button:focus-visible,
+.ghost-button:focus-visible,
+.danger-button:focus-visible,
+.view-button:focus-visible,
+.appbar-button:focus-visible,
+.timeline-card:focus-visible,
+.legend-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.timeline-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+@media (max-width: 760px) {
+  .stage-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dancer-roster {
+    order: 2;
+  }
+}
+
+@media (max-width: 600px) {
+  .stage-controls .cue-time-field {
+    grid-column: 1 / -1;
+  }
+
+  .media-source-group .url-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .media-source-group .url-row input {
+    grid-column: 1 / -1;
+  }
+
+  .media-source-group .url-row button {
+    width: 100%;
+  }
+}

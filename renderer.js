@@ -476,11 +476,11 @@ function selectDancer(dancerId, shouldRender = true) {
 function applyPanelState() {
   const timelineExpanded = Boolean(project.panelState.cues);
   elements.cuesPanel.classList.toggle("expanded", timelineExpanded);
-  elements.toggleCuesButton.textContent = timelineExpanded ? "Compact" : "Expand";
+  elements.toggleCuesButton.textContent = timelineExpanded ? "Show row" : "Show all";
   elements.toggleCuesButton.setAttribute("aria-expanded", String(timelineExpanded));
   elements.toggleCuesButton.setAttribute(
     "aria-label",
-    `${timelineExpanded ? "Compact" : "Expand"} cue timeline`
+    `${timelineExpanded ? "Show row of" : "Show all"} formation cues`
   );
 }
 
@@ -1560,6 +1560,9 @@ function render() {
   elements.formationNameInput.value = activeFormation.name;
   elements.formationTimeInput.value = activeFormation.time.toFixed(1);
   elements.formationNotesInput.value = activeFormation.notes;
+  elements.deleteFormationButton.disabled = project.formations.length <= 1;
+  elements.deleteFormationButton.title = project.formations.length <= 1
+    ? "Keep at least one formation" : "Delete the selected formation";
   elements.bpmInput.value = project.bpm;
   elements.musicOffsetInput.value = project.musicStartOffset;
   elements.showGridInput.checked = project.editorSettings.showGrid;
