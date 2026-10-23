@@ -202,15 +202,13 @@
             <details class="editor-tools">
               <summary>
                 <span>Formation tools</span>
-                <small id="selectionCountLabel">1 dancer selected</small>
+                <small id="selectedDancerLabel">Dancer selected</small>
               </summary>
               <div class="editor-tools-content">
                 <div class="selection-actions tool-row">
-                  <strong>Selection</strong>
-                  <button id="selectAllDancersButton" class="ghost-button small-button" type="button" title="Select every dancer">Select all</button>
-                  <button id="clearSelectionButton" class="ghost-button small-button" type="button" title="Clear the current selection">Clear</button>
-                  <button id="deleteSelectedDancersButton" class="danger-button small-button" type="button" title="Delete selected dancers from every formation">Delete dancers</button>
-                  <span>Click dancers to toggle them, or drag a box on the 2D stage.</span>
+                  <strong>Selected dancer</strong>
+                  <button id="deleteSelectedDancerButton" class="danger-button small-button" type="button" title="Delete the selected dancer from every formation">Delete dancer</button>
+                  <span>Click a dancer on the stage or in the roster to select it.</span>
                 </div>
 
                 <div class="template-tools tool-row">
@@ -230,7 +228,7 @@
                     </select>
                   </label>
                   <button id="previewTemplateButton" class="ghost-button small-button" type="button" title="Preview without changing the formation">Preview</button>
-                  <button id="applyTemplateButton" class="primary-button small-button" type="button" title="Apply template to selected dancers">Apply</button>
+                  <button id="applyTemplateButton" class="primary-button small-button" type="button" title="Apply template to all dancers">Apply</button>
                 </div>
 
                 <div class="grid-tools tool-row">
@@ -325,7 +323,7 @@
             <span class="help-step-number" aria-hidden="true">4</span>
             <div>
               <h3>Build each formation</h3>
-              <p>Play to the right moment, select <strong>Use Current Time</strong>, then drag dancers into place. Click dancers to select several at once.</p>
+              <p>Play to the right moment, select <strong>Use Current Time</strong>, then drag dancers into place. Click a dancer to select it.</p>
             </div>
           </li>
           <li>

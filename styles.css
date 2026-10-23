@@ -2348,14 +2348,6 @@ body.help-open {
   pointer-events: none;
 }
 
-.selection-rectangle {
-  position: absolute;
-  z-index: 200;
-  border: 1px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  pointer-events: none;
-}
-
 .count-timeline-panel {
   margin: 12px 18px 18px;
   overflow: hidden;

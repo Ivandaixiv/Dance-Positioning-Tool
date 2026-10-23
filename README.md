@@ -7,9 +7,9 @@ Desktop choreography charting app built with Electron.
 - Paste a YouTube URL to load it immediately, or press Enter/use Load Video.
 - Use a local MP4/MOV/WebM rehearsal video as an offline fallback.
 - Add up to 30 dancers in the current UI, with the default layout tuned for 12.
-- Click dancers to toggle an additive selection, or drag a selection box in 2D, then move or delete the group together.
+- Click a dancer on the stage or in the roster to select it, then move or delete that dancer.
 - Undo and redo stage edits with the toolbar or `Cmd/Ctrl+Z`, `Cmd/Ctrl+Shift+Z`, and `Ctrl+Y`.
-- Apply and preview 10 formation templates and optionally snap moves to a configurable grid.
+- Apply and preview 10 formation templates for all dancers, and optionally snap moves to a configurable grid.
 - Switch between an editable 2D plan and a perspective 3D Plan.
 - Switch between light and dark themes, with the preference remembered locally.
 - Open the built-in Help guide for a first-project walkthrough on desktop or mobile.
