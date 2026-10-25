@@ -164,8 +164,12 @@
   }
 
   function dancerInitial(name) {
-    const first = Array.from(String(name || "").trim())[0] || "";
-    return Array.from(first.toLocaleUpperCase())[0] || "?";
+    const words = String(name || "").trim().split(/\s+/u);
+    if (!words[0]) return "?";
+
+    const firstLetter = (word) => Array.from(Array.from(word)[0].toLocaleUpperCase())[0];
+    const first = firstLetter(words[0]);
+    return words.length > 1 ? first + firstLetter(words[words.length - 1]) : first;
   }
 
   function transitionTiming(fromTime, toTime, startDelay = 0) {

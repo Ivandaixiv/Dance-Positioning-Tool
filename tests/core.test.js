@@ -65,11 +65,15 @@ test("8-count math respects BPM and music offset", () => {
   assert.equal(countInfo(1, 120, 2).label, "Pre-roll");
 });
 
-test("dancer labels use the first character of the name", () => {
-  assert.equal(dancerInitial("  Maya Chen"), "M");
+test("dancer labels use first and last name initials when separated by whitespace", () => {
+  assert.equal(dancerInitial("John Smith"), "JS");
+  assert.equal(dancerInitial("  Maya   Chen  "), "MC");
+  assert.equal(dancerInitial("Ana Maria Lopez"), "AL");
+  assert.equal(dancerInitial("john\tsmith"), "JS");
   assert.equal(dancerInitial("élise"), "É");
   assert.equal(dancerInitial("ßeta"), "S");
   assert.equal(dancerInitial(""), "?");
+  assert.equal(dancerInitial("   "), "?");
 });
 
 test("transition delay holds the first formation and still arrives at the next cue", () => {
