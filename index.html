@@ -259,9 +259,14 @@
 
             <div id="transitionToolbar" class="transition-toolbar hidden">
               <div>
-                <p class="eyebrow">Transition Path Editor</p>
+                <p class="eyebrow">Transition editor</p>
                 <strong id="transitionTitle">Formation 1 to Formation 2</strong>
                 <p id="transitionHint">Select a dancer, then add and drag waypoints.</p>
+                <div class="transition-timing">
+                  <label class="field" for="transitionDelayInput">Start delay (seconds)</label>
+                  <input id="transitionDelayInput" type="number" min="0" step="0.1" value="0" />
+                  <small id="transitionTimingSummary">Starts at 00:00.0</small>
+                </div>
               </div>
               <div class="transition-actions">
                 <button id="addWaypointButton" class="primary-button" type="button">Add Waypoint</button>
@@ -337,7 +342,7 @@
             <span class="help-step-number" aria-hidden="true">5</span>
             <div>
               <h3>Map the transition</h3>
-              <p>Open the <strong>Map transition</strong> block between two cues. Drag the start and end bubbles, then add waypoints for curved or crossing paths.</p>
+              <p>Open <strong>Edit transition</strong> between two cues to set a start delay and adjust dancer paths.</p>
             </div>
           </li>
           <li>

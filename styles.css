@@ -494,6 +494,43 @@ h2 {
   font-size: 12px;
 }
 
+.transition-timing {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 8px;
+  max-width: 280px;
+  margin-top: 9px;
+}
+
+.transition-timing label {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.transition-timing input {
+  width: 78px;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 4px 7px;
+  color: var(--text);
+  background: var(--control-bg);
+}
+
+.transition-timing input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.transition-timing small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
 .transition-actions {
   display: flex;
   gap: 8px;
@@ -1532,6 +1569,14 @@ h2 {
 
 .transition-card small {
   display: none;
+}
+
+.transition-card .transition-delay-summary {
+  display: block;
+  overflow: hidden;
+  color: var(--accent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .transition-arrow {

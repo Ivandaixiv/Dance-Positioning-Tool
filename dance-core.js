@@ -163,6 +163,27 @@
     return { beatIndex, count, group, label: `8-count ${group} · ${count}` };
   }
 
+  function dancerInitial(name) {
+    const first = Array.from(String(name || "").trim())[0] || "";
+    return Array.from(first.toLocaleUpperCase())[0] || "?";
+  }
+
+  function transitionTiming(fromTime, toTime, startDelay = 0) {
+    const start = Number(fromTime);
+    const end = Number(toTime);
+    const interval = Math.max(0, end - start);
+    const maxDelay = Math.max(0, Math.floor((interval - 0.1) * 10 + 1e-8) / 10);
+    const requestedDelay = Number(startDelay);
+    const delay = clamp(Number.isFinite(requestedDelay) ? requestedDelay : 0, 0, maxDelay);
+    return { delay, maxDelay, startTime: start + delay };
+  }
+
+  function transitionProgress(time, fromTime, toTime, startDelay = 0) {
+    const { startTime } = transitionTiming(fromTime, toTime, startDelay);
+    const duration = Math.max(Number(toTime) - startTime, 0.01);
+    return clamp((Number(time) - startTime) / duration, 0, 1);
+  }
+
   class HistoryStack {
     constructor(limit = 100) {
       this.limit = limit;
@@ -203,8 +224,11 @@
     clamp,
     countInfo,
     createTemplatePositions,
+    dancerInitial,
     deepClone,
     secondsPerBeat,
-    snapPosition
+    snapPosition,
+    transitionProgress,
+    transitionTiming
   };
 }));

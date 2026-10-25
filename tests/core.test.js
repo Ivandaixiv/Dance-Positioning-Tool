@@ -6,8 +6,11 @@ const {
   applyTemplate,
   countInfo,
   createTemplatePositions,
+  dancerInitial,
   secondsPerBeat,
-  snapPosition
+  snapPosition,
+  transitionProgress,
+  transitionTiming
 } = require("../dance-core.js");
 
 const ids = Array.from({ length: 30 }, (_, index) => index + 1);
@@ -60,6 +63,23 @@ test("8-count math respects BPM and music offset", () => {
   assert.equal(countInfo(5.5, 120, 2).label, "8-count 1 · 8");
   assert.equal(countInfo(6, 120, 2).label, "8-count 2 · 1");
   assert.equal(countInfo(1, 120, 2).label, "Pre-roll");
+});
+
+test("dancer labels use the first character of the name", () => {
+  assert.equal(dancerInitial("  Maya Chen"), "M");
+  assert.equal(dancerInitial("élise"), "É");
+  assert.equal(dancerInitial("ßeta"), "S");
+  assert.equal(dancerInitial(""), "?");
+});
+
+test("transition delay holds the first formation and still arrives at the next cue", () => {
+  assert.equal(transitionProgress(4, 0, 8), 0.5);
+  assert.equal(transitionProgress(4, 0, 8, 4), 0);
+  assert.equal(transitionProgress(6, 0, 8, 4), 0.5);
+  assert.equal(transitionProgress(8, 0, 8, 4), 1);
+  assert.equal(transitionTiming(0, 8, 20).delay, 7.9);
+  assert.equal(transitionTiming(0, 8.05, 20).delay, 7.9);
+  assert.equal(transitionProgress(8, 0, 8, 20), 1);
 });
 
 test("history undo and redo restore immutable snapshots", () => {

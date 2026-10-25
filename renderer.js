@@ -7,9 +7,12 @@ const {
   applyTemplate,
   countInfo,
   createTemplatePositions,
+  dancerInitial,
   deepClone,
   secondsPerBeat,
-  snapPosition
+  snapPosition,
+  transitionProgress,
+  transitionTiming
 } = window.DanceCore;
 
 const colorPalette = [
@@ -88,6 +91,8 @@ const elements = {
   transitionToolbar: document.querySelector("#transitionToolbar"),
   transitionTitle: document.querySelector("#transitionTitle"),
   transitionHint: document.querySelector("#transitionHint"),
+  transitionDelayInput: document.querySelector("#transitionDelayInput"),
+  transitionTimingSummary: document.querySelector("#transitionTimingSummary"),
   addWaypointButton: document.querySelector("#addWaypointButton"),
   clearPathButton: document.querySelector("#clearPathButton"),
   finishTransitionButton: document.querySelector("#finishTransitionButton"),
@@ -296,7 +301,13 @@ function normalizeTransitions(transitions, formations, dancerIds) {
       }));
     });
 
-    normalized[key] = { fromFormationId, toFormationId, paths };
+    const startDelay = Number(transition?.startDelay);
+    normalized[key] = {
+      fromFormationId,
+      toFormationId,
+      startDelay: Number.isFinite(startDelay) ? Math.max(0, startDelay) : 0,
+      paths
+    };
   });
 
   return normalized;
@@ -524,6 +535,7 @@ function ensureTransition(fromFormationId, toFormationId) {
     project.transitions[key] = {
       fromFormationId,
       toFormationId,
+      startDelay: 0,
       paths: {}
     };
   }
@@ -702,11 +714,11 @@ function getPlaybackSegment(time) {
     return { fromFormation, toFormation: null, progress: 1 };
   }
 
-  const duration = Math.max(toFormation.time - fromFormation.time, 0.01);
+  const transition = project.transitions[getTransitionKey(fromFormation.id, toFormation.id)];
   return {
     fromFormation,
     toFormation,
-    progress: clamp((time - fromFormation.time) / duration, 0, 1)
+    progress: transitionProgress(time, fromFormation.time, toFormation.time, transition?.startDelay)
   };
 }
 
@@ -821,7 +833,10 @@ function animateFormationToTime(time) {
     }
   });
 
-  const playbackLabel = `${fromFormation.name} to ${toFormation.name} | ${Math.round(progress * 100)}%`;
+  const startTime = transitionTiming(fromFormation.time, toFormation.time, transition?.startDelay).startTime;
+  const playbackLabel = time < startTime
+    ? `${fromFormation.name} | holding`
+    : `${fromFormation.name} to ${toFormation.name} | ${Math.round(progress * 100)}%`;
   if (playbackLabel !== lastPlaybackLabel) {
     elements.activeFormationLabel.textContent = playbackLabel;
     lastPlaybackLabel = playbackLabel;
@@ -1267,8 +1282,9 @@ function renderTransitionStage(transition) {
     startNode.dataset.dancerId = String(dancer.id);
     startNode.dataset.endpoint = "start";
     startNode.style.background = dancer.color;
-    startNode.textContent = String(dancer.id);
+    startNode.textContent = dancerInitial(dancer.name);
     startNode.title = `${dancer.name} start`;
+    startNode.setAttribute("aria-label", startNode.title);
     positionStageElement(startNode, start);
     startNode.addEventListener("pointerdown", beginTransitionEndpointDrag);
     startNode.addEventListener("click", () => selectDancer(dancer.id));
@@ -1280,8 +1296,9 @@ function renderTransitionStage(transition) {
     endNode.dataset.dancerId = String(dancer.id);
     endNode.dataset.endpoint = "end";
     endNode.style.setProperty("--dancer-color", dancer.color);
-    endNode.textContent = String(dancer.id);
+    endNode.textContent = dancerInitial(dancer.name);
     endNode.title = `${dancer.name} destination`;
+    endNode.setAttribute("aria-label", endNode.title);
     positionStageElement(endNode, end);
     endNode.addEventListener("pointerdown", beginTransitionEndpointDrag);
     endNode.addEventListener("click", () => selectDancer(dancer.id));
@@ -1328,9 +1345,10 @@ function renderStage(formation) {
       const marker = document.createElement("span");
       const projected = projectStagePosition(position);
       marker.className = "template-preview-marker";
+      marker.dataset.dancerId = String(position.dancerId);
       marker.style.left = `${projected.x}%`;
       marker.style.top = `${projected.y}%`;
-      marker.textContent = String(position.dancerId);
+      marker.textContent = dancerInitial(project.dancers.find((dancer) => dancer.id === position.dancerId)?.name);
       elements.stageSurface.append(marker);
     });
   }
@@ -1361,12 +1379,13 @@ function renderStage(formation) {
       const number = document.createElement("span");
       number.className = "marker-number";
       number.style.background = dancer.color;
-      number.textContent = String(dancer.id);
+      number.textContent = dancerInitial(dancer.name);
       marker.append(avatar, number);
     } else {
-      marker.textContent = String(dancer.id);
+      marker.textContent = dancerInitial(dancer.name);
     }
     marker.title = dancer.name;
+    marker.setAttribute("aria-label", dancer.name);
     marker.addEventListener("pointerdown", beginMarkerDrag);
     marker.addEventListener("click", (event) => {
       if (suppressNextMarkerClick) {
@@ -1378,6 +1397,36 @@ function renderStage(formation) {
     elements.stageSurface.append(marker);
     renderedMarkers.set(dancer.id, marker);
   });
+}
+
+function updateDancerNameOnStage(dancer) {
+  const initial = dancerInitial(dancer.name);
+  const marker = elements.stageSurface.querySelector(`.dancer-marker[data-dancer-id="${dancer.id}"]`);
+  if (marker) {
+    const badge = marker.querySelector(".marker-number");
+    if (badge) badge.textContent = initial;
+    else marker.textContent = initial;
+    marker.title = dancer.name;
+    marker.setAttribute("aria-label", dancer.name);
+  }
+  elements.stageSurface.querySelectorAll(`.transition-node[data-dancer-id="${dancer.id}"]`).forEach((node) => {
+    node.textContent = initial;
+    node.title = `${dancer.name} ${node.dataset.endpoint === "start" ? "start" : "destination"}`;
+    node.setAttribute("aria-label", node.title);
+  });
+  elements.stageSurface.querySelectorAll(`.path-waypoint[data-dancer-id="${dancer.id}"]`).forEach((node) => {
+    node.title = `${dancer.name} waypoint ${Number(node.dataset.waypointIndex) + 1}`;
+  });
+  const preview = elements.stageSurface.querySelector(`.template-preview-marker[data-dancer-id="${dancer.id}"]`);
+  if (preview) preview.textContent = initial;
+  const row = elements.dancerLegend.querySelector(`.legend-row[data-dancer-id="${dancer.id}"]`);
+  const swatch = row?.querySelector(".swatch");
+  if (swatch) {
+    swatch.querySelector("span").textContent = initial;
+    swatch.title = `Change ${dancer.name}'s color`;
+    swatch.querySelector("input").setAttribute("aria-label", `Color for ${dancer.name}`);
+  }
+  row?.querySelector(".pose-control select")?.setAttribute("aria-label", `Sprite pose for ${dancer.name}`);
 }
 
 function renderLegend() {
@@ -1395,7 +1444,7 @@ function renderLegend() {
     swatch.addEventListener("pointerdown", (event) => event.stopPropagation());
     swatch.addEventListener("click", (event) => event.stopPropagation());
     const swatchNumber = document.createElement("span");
-    swatchNumber.textContent = String(dancer.id);
+    swatchNumber.textContent = dancerInitial(dancer.name);
     const colorInput = document.createElement("input");
     colorInput.className = "dancer-color-input";
     colorInput.type = "color";
@@ -1430,10 +1479,7 @@ function renderLegend() {
     nameInput.addEventListener("click", (event) => event.stopPropagation());
     nameInput.addEventListener("input", (event) => {
       dancer.name = event.target.value;
-      const marker = elements.stageSurface.querySelector(`.dancer-marker[data-dancer-id="${dancer.id}"]`);
-      if (marker) {
-        marker.title = dancer.name;
-      }
+      updateDancerNameOnStage(dancer);
       if (project.selectedDancerId === dancer.id) updateSelectedDancerUi();
       saveState();
     });
@@ -1441,10 +1487,7 @@ function renderLegend() {
       const fallbackName = `Dancer ${dancer.id}`;
       dancer.name = event.target.value.trim() || fallbackName;
       event.target.value = dancer.name;
-      const marker = elements.stageSurface.querySelector(`.dancer-marker[data-dancer-id="${dancer.id}"]`);
-      if (marker) {
-        marker.title = dancer.name;
-      }
+      updateDancerNameOnStage(dancer);
       if (project.selectedDancerId === dancer.id) updateSelectedDancerUi();
       saveState();
     });
@@ -1532,6 +1575,7 @@ function renderTimeline(activeFormationId) {
       }
 
       const transition = project.transitions[getTransitionKey(formation.id, nextFormation.id)];
+      const timing = transitionTiming(formation.time, nextFormation.time, transition?.startDelay);
       const mappedDancers = Object.values(transition?.paths || {})
         .filter((path) => Array.isArray(path) && path.length > 0)
         .length;
@@ -1544,12 +1588,15 @@ function renderTimeline(activeFormationId) {
       arrow.textContent = "→";
       const details = document.createElement("span");
       const title = document.createElement("strong");
-      title.textContent = "Map transition";
+      title.textContent = "Edit transition";
+      const delay = document.createElement("small");
+      delay.className = "transition-delay-summary";
+      delay.textContent = timing.delay > 0 ? `+${timing.delay.toFixed(1)}s delay` : "Immediate";
       const names = document.createElement("small");
       names.textContent = `${formation.name} to ${nextFormation.name}`;
       const pathCount = document.createElement("small");
       pathCount.textContent = `${mappedDancers} of ${project.dancerCount} paths customized`;
-      details.append(title, names, pathCount);
+      details.append(title, delay, names, pathCount);
       transitionCard.append(arrow, details);
       transitionCard.addEventListener("click", () => {
         openTransitionEditor(formation.id, nextFormation.id);
@@ -1633,6 +1680,11 @@ function render() {
     elements.transitionHint.textContent = isAddingWaypoint
       ? `Tap the stage to place a waypoint for ${selectedDancer.name}.`
       : `Selected: ${selectedDancer.name}. Drag the solid start, outlined destination, or any waypoint.`;
+    const timing = transitionTiming(fromFormation.time, toFormation.time, activeTransition.startDelay);
+    elements.transitionDelayInput.max = timing.maxDelay.toFixed(1);
+    elements.transitionDelayInput.value = timing.delay.toFixed(1);
+    elements.transitionDelayInput.disabled = timing.maxDelay === 0;
+    elements.transitionTimingSummary.textContent = `Starts ${formatTime(timing.startTime)} · arrives ${formatTime(toFormation.time)}`;
   }
   updateMediaSourceLabel();
 
@@ -2230,6 +2282,18 @@ elements.formationNameInput.addEventListener("input", (event) => {
 elements.formationTimeInput.addEventListener("change", (event) => {
   const before = deepClone(project);
   getActiveFormation().time = Math.max(0, Number(event.target.value) || 0);
+  commitHistory(before);
+  render();
+});
+
+elements.transitionDelayInput.addEventListener("change", (event) => {
+  const transition = getActiveTransition();
+  if (!transition) return;
+  const fromFormation = project.formations.find((formation) => formation.id === transition.fromFormationId);
+  const toFormation = project.formations.find((formation) => formation.id === transition.toFormationId);
+  const before = deepClone(project);
+  const timing = transitionTiming(fromFormation.time, toFormation.time, Number(event.target.value));
+  transition.startDelay = Number(timing.delay.toFixed(1));
   commitHistory(before);
   render();
 });
