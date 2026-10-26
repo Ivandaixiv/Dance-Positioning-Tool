@@ -13,6 +13,7 @@ Desktop choreography charting app built with Electron.
 - Switch between an editable 2D plan and a perspective 3D Plan.
 - Switch between light and dark themes, with the preference remembered locally.
 - Open the built-in Help guide for a first-project walkthrough on desktop or mobile.
+- Send suggestions through the Feedback link in the top bar.
 - Select dancers from the left roster and assign one of 12 standard dance poses.
 - Map color-coded dancer pathways between each pair of formation cues. Set an optional start delay to hold the first formation before moving to the next cue.
 - During video playback, dancer bubbles and sprite-stage characters animate along the saved transition paths.
